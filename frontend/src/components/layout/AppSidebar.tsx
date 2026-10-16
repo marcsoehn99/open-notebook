@@ -73,13 +73,12 @@ const getNavigation = (t: TFunction) => [
   },
 ] as const
 
-// The tri-hue mark recomposed in the owned palette: fern / gold / teal.
 function LogoPebbles({ className }: { className?: string }) {
   return (
     <span className={cn('flex items-center gap-[3px]', className)} aria-hidden="true">
-      <span className="size-[9px] rounded-[3px] bg-fern" />
-      <span className="size-[9px] rounded-[3px] bg-gold" />
-      <span className="size-[9px] rounded-[3px] bg-teal" />
+      <span className="size-[9px] rounded-xs bg-nav-accent" />
+      <span className="size-[9px] rounded-xs bg-apricot" />
+      <span className="size-[9px] rounded-xs bg-on-nav-muted" />
     </span>
   )
 }
@@ -128,7 +127,7 @@ export function AppSidebar() {
       <div
         className={cn(
           'app-sidebar flex h-full flex-col bg-sidebar border-sidebar-border border-r transition-all duration-300',
-          isCollapsed ? 'w-16' : 'w-64'
+          isCollapsed ? 'w-16' : 'w-[264px]'
         )}
       >
         <div
@@ -260,7 +259,7 @@ export function AppSidebar() {
               )}
               <div className="space-y-1">
                 {!isCollapsed && (
-                  <h3 className="mb-1.5 px-3 text-[10.5px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/40">
+                  <h3 className="mb-1.5 px-3 text-[10.5px] font-bold uppercase tracking-[0.14em] text-on-nav-muted">
                     {section.title}
                   </h3>
                 )}
@@ -270,14 +269,15 @@ export function AppSidebar() {
                   const button = (
                     <Button
                       variant="ghost"
+                      data-active={isActive ? 'true' : undefined}
                       className={cn(
-                        'w-full gap-2.5 text-[13px] font-medium text-sidebar-foreground/80 sidebar-menu-item relative',
+                        'w-full gap-2.5 text-[13px] font-medium text-on-nav-muted sidebar-menu-item relative hover:bg-transparent hover:text-on-nav',
                         isActive &&
-                          'bg-popover font-semibold text-sidebar-foreground ring-1 ring-inset ring-border before:absolute before:-left-1.5 before:top-[7px] before:bottom-[7px] before:w-[3px] before:rounded-[2px] before:bg-fern',
+                          'bg-sidebar-accent font-semibold text-sidebar-foreground before:absolute before:-left-1.5 before:top-[7px] before:bottom-[7px] before:w-[3px] before:rounded-pill before:bg-nav-accent',
                         isCollapsed ? 'justify-center px-2' : 'justify-start'
                       )}
                     >
-                      <item.icon className={cn('h-4 w-4 opacity-85', item.iconClass)} />
+                      <item.icon className={cn('h-4 w-4', isActive ? 'text-nav-accent' : cn('opacity-85', item.iconClass))} />
                       {!isCollapsed && <span>{item.name}</span>}
                     </Button>
                   )
@@ -368,7 +368,7 @@ export function AppSidebar() {
               <TooltipTrigger asChild>
                 <Button
                   variant="outline"
-                  className="w-full justify-center sidebar-menu-item"
+                  className="w-full justify-center sidebar-menu-item border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
                   onClick={logout}
                   aria-label={t('common.signOut')}
                 >
@@ -380,7 +380,7 @@ export function AppSidebar() {
           ) : (
             <Button
               variant="outline"
-              className="w-full justify-start gap-2 sidebar-menu-item"
+              className="w-full justify-start gap-2 sidebar-menu-item border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
               onClick={logout}
               aria-label={t('common.signOut')}
              >

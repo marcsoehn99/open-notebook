@@ -785,7 +785,7 @@ function SourceDetailContentInner({
                     <h3 className="text-sm font-medium">{t('sources.metadata')}</h3>
                     <div className="flex items-center gap-2">
                       <Database className="h-3.5 w-3.5 text-muted-foreground" />
-                      <Badge variant={source.embedded ? "default" : "secondary"} className="text-xs">
+                      <Badge variant="outline" className={source.embedded ? "border-transparent bg-success-soft text-xs text-success" : "border-transparent bg-neutral-soft text-xs text-muted-foreground"}>
                         {source.embedded ? t('sources.embedded') : t('sources.notEmbedded')}
                       </Badge>
                     </div>

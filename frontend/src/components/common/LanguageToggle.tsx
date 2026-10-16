@@ -35,7 +35,7 @@ export function LanguageToggle({ iconOnly = false }: LanguageToggleProps) {
         <Button 
           variant={iconOnly ? "ghost" : "outline"} 
           size={iconOnly ? "icon" : "default"} 
-          className={iconOnly ? "h-9 w-full sidebar-menu-item" : "w-full justify-start gap-2 sidebar-menu-item"}
+          className={iconOnly ? "h-9 w-full sidebar-menu-item text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground" : "w-full justify-start gap-2 sidebar-menu-item border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"}
         >
           <Languages className="h-[1.2rem] w-[1.2rem]" />
           {!iconOnly && <span>{t('common.language')}</span>}
