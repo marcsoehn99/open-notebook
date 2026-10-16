@@ -23,6 +23,7 @@ The normative rules for coding agents (and humans in a hurry) are in the `AGENTS
 | [API Reference](api-reference.md) | `/api` prefix, auth, async jobs, streaming, errors; the live schema is at `/docs` |
 | [Code Standards](code-standards.md) | Tooling, async, database access, error handling |
 | [Testing](testing.md) | Test layout, commands and patterns |
+| [Langfuse evaluation datasets](langfuse-evaluation-datasets.md) | Concept for a later Quiz me feature. A dataset item is a question about sources plus the expected answer |
 | [Security](security.md) | Query, template and file-handling safety; secrets; review checklist |
 | [Design Principles](design-principles.md) | Engineering practices and anti-patterns |
 | [Decision Records](decisions/README.md) | ADRs and PDRs: why things are the way they are |
