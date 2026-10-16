@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Optional Langfuse tracing.** Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to send language-model calls (prompt, token counts, latency, and the cost Langfuse computes from those tokens) to Langfuse. The default host is `https://cloud.langfuse.com` (EU cloud). `LANGFUSE_BASE_URL` is accepted when `LANGFUSE_HOST` is unset. With either key unset, tracing stays off and Open Notebook does not contact Langfuse. See [Environment Reference](docs/5-CONFIGURATION/environment-reference.md#logging-and-tracing).
+
 ### Changed
 - **SRH Workflow theme.** Pages use the warm off-white surface (swamp in dark mode), primary actions use SRH orange, the sidebar stays dark in both themes, and UI text uses Plus Jakarta Sans with JetBrains Mono for data.
 - **SRH controls.** Primary buttons are orange with the SRH radius, badges are pills that pair a status word with its color, and the dark sidebar marks the active item in orange.

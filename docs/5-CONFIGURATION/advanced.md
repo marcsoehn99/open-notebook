@@ -141,6 +141,19 @@ environment:
 
 Traces include your prompts and source content. The older `LANGCHAIN_*` names also work.
 
+### Langfuse tracing
+
+Leave the keys unset to keep tracing off. To send language-model calls to Langfuse, set both keys on the API and the worker.
+
+```yaml
+environment:
+  - LANGFUSE_PUBLIC_KEY=pk-lf-...
+  - LANGFUSE_SECRET_KEY=sk-lf-...
+  - LANGFUSE_HOST=https://cloud.langfuse.com   # optional; EU cloud, and the default
+```
+
+`LANGFUSE_BASE_URL` is used when `LANGFUSE_HOST` is unset. Traces include prompts and source content. Each traced call records the prompt, token counts and latency. Langfuse computes the cost from those token counts. Details are in the [Environment Reference](environment-reference.md#logging-and-tracing).
+
 ---
 
 ## Content Extraction Engines

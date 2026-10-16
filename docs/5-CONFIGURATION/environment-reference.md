@@ -216,8 +216,13 @@ If an engine is selected in Settings but its runtime is missing, extraction fall
 | `LANGSMITH_API_KEY` (or `LANGCHAIN_API_KEY`) | none | API + Worker | LangSmith API key |
 | `LANGSMITH_ENDPOINT` (or `LANGCHAIN_ENDPOINT`) | `https://api.smith.langchain.com` | API + Worker | LangSmith endpoint |
 | `LANGSMITH_PROJECT` (or `LANGCHAIN_PROJECT`) | `default` | API + Worker | LangSmith project name |
+| `LANGFUSE_PUBLIC_KEY` | none | API + Worker | Langfuse public key. Tracing stays off until this and `LANGFUSE_SECRET_KEY` are both set |
+| `LANGFUSE_SECRET_KEY` | none | API + Worker | Langfuse secret key. Pair it with `LANGFUSE_PUBLIC_KEY` |
+| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | API + Worker | Langfuse base URL when tracing is on. The default is Langfuse Cloud EU. `LANGFUSE_BASE_URL` is used only when `LANGFUSE_HOST` is unset |
 
 Tracing sends prompts and source content to LangSmith. Setup: https://smith.langchain.com/
+
+Langfuse tracing is off when either key is unset. Open Notebook does not import the Langfuse client on that path and does not contact Langfuse. When both keys are set, each language-model call provisioned for a graph records the prompt, token counts and latency. Langfuse computes cost from the token counts. The same variables must be visible to the API and the worker (`make api` and `make worker-start` load them from `.env`). A later evaluation set, not built yet, is described in [Langfuse evaluation datasets](../7-DEVELOPMENT/langfuse-evaluation-datasets.md).
 
 SurrealDB's own log level is the `--log` argument in the `surrealdb` service's `command:` (`info` in the shipped compose file).
 
