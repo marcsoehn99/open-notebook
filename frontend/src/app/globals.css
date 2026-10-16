@@ -4,26 +4,19 @@
 
 @variant dark (&:where(.dark, .dark *));
 
-/* ============================================================================
-   OPEN NOTEBOOK — DESIGN FOUNDATION ("Quiet Green")
-
-   The laws, in one breath:
-     fern acts · teal speaks (AI/system voice) · red destroys, and only destroys
-     warn is clay, never the action hues · color never washes a reading surface
-     hairline borders, near-zero shadows — popovers own the one real shadow
-     geometry is squared, 4–6px, floor is 4 · mono is for data, not prose
-
-   Layering: raw palette + semantic raws live in :root and are overridden by
-   `.dark`; every alias defined with var() re-resolves automatically — never
-   duplicate aliases into the dark block.
-   ========================================================================== */
+/* SRH Workflow. design/srh/tokens.json is the value source.
+   Raws live on :root and are overridden in .dark. Aliases are declared once.
+   --bg is the page (SRH surface). --surface is the card (SRH surface-raised).
+   Those two names collided, so they stay distinct.
+   Action is brand-strong. fern, teal, and clay alias success, info, and warning
+   so older utilities do not keep the Quiet Green brand. */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-instrument-sans), "Helvetica Neue", Arial, sans-serif;
-  --font-mono: var(--font-spline-mono), ui-monospace, "SF Mono", Menlo, monospace;
-  --font-display: var(--font-bricolage), "Avenir Next", "Trebuchet MS", sans-serif;
+  --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: var(--font-plus-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -40,6 +33,7 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-tint: var(--danger-tint);
   --color-accent-foreground: var(--accent-foreground);
@@ -55,6 +49,27 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-on-brand-strong: var(--on-brand-strong);
+  --color-sand: var(--sand);
+  --color-apricot: var(--apricot);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-on-danger: var(--on-danger);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-line-strong: var(--line-strong);
+  --color-scrim: var(--scrim);
+  --color-nav-accent: var(--nav-accent);
+  --color-on-nav: var(--on-nav);
+  --color-on-nav-muted: var(--on-nav-muted);
+  --color-on-nav-accent: var(--on-nav-accent);
 
   /* owned hues — exposed as utilities (bg-fern, text-teal, border-gold…) */
   --color-fern: var(--fern);
@@ -119,104 +134,129 @@
   --color-ctx-insights: var(--ctx-insights);
   --color-ctx-insights-tint: var(--ctx-insights-tint);
 
-  /* shape — squared: instrument, not toy; floor is 4px */
-  --radius-sm: 4px;
-  --radius-md: 5px;
-  --radius-lg: 5px;
-  --radius-xl: 6px;
+  /* xs 6, sm 10, md 14, lg 20, xl 28, pill. rounded-* reads these literals. */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
 
-  /* depth — hairlines separate; popovers own the one real shadow */
   --shadow-soft: var(--shadow-soft);
   --shadow-lift: var(--shadow-lift);
   --shadow-pop: var(--shadow-pop);
   --shadow-overlay: var(--shadow-overlay);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-glass: var(--shadow-glass);
+
+  --blur-glass: var(--blur-glass);
+  --blur-glass-strong: var(--blur-glass-strong);
 }
 
 :root {
-  /* --------------------------------------------------------------
-     core palette — the owned hues, red-free
-     -------------------------------------------------------------- */
-  --fern: #2e6b4f;
-  --fern-deep: #245740;
-  --fern-tint: #dfeae2;
+  /* SRH color raws. Hex matches design/srh/tokens.json. */
+  --brand: #df4807;
+  --brand-strong: #c43d04;
+  --on-brand-strong: #ffffff;
+  --brand-soft: #fdeee6;
+  --sand: #efe4d6;
+  --apricot: #e89a79;
+  --success: #1e6b47;
+  --success-soft: #e6f3ec;
+  --warning: #9a5300;
+  --warning-soft: #fdf1dc;
+  --info: #1d5aa6;
+  --info-soft: #e7eefa;
+  --neutral-soft: #eef0f2;
 
+  --nav-surface: #000b12;
+  --nav-line: rgba(255, 255, 255, 0.08);
+  --on-nav: #f5f1ec;
+  --on-nav-muted: #a7b0b8;
+  --nav-accent: #ff7a3d;
+  --on-nav-accent: #0b1116;
+
+  --glass-fill: rgba(255, 255, 255, 0.58);
+  --glass-fill-card: rgba(255, 255, 255, 0.8);
+  --glass-stroke: rgba(255, 255, 255, 0.72);
+  --glass-sheen: rgba(255, 255, 255, 0.9);
+  --scrim: rgba(0, 11, 18, 0.42);
+
+  --blur-glass: 20px;
+  --blur-glass-strong: 40px;
+  --opacity-disabled: 0.45;
+
+  /* Older utility names, pointed at SRH status colors. */
+  --fern: var(--success);
+  --fern-deep: var(--success);
+  --fern-tint: var(--success-soft);
+  --teal: var(--info);
+  --teal-deep: var(--info);
+  --teal-tint: var(--info-soft);
+  --clay: var(--warning);
+  --clay-deep: var(--warning);
+  --clay-tint: var(--warning-soft);
+  --warn: var(--warning);
+  --warn-deep: var(--warning);
+  --warn-tint: var(--warning-soft);
+
+  /* Categorical hues for content types. Not the brand. */
   --sage: #5e7a54;
   --sage-deep: #47603f;
   --sage-tint: #e5ebdc;
-
   --gold: #a97b12;
   --gold-deep: #7c5a05;
   --gold-tint: #f3ead3;
-
-  --teal: #0e7268;
-  --teal-deep: #095a51;
-  --teal-tint: #ddece8;
-
   --plum: #5d4991;
   --plum-tint: #eae6f3;
-
   --mauve: #8d5b80;
   --mauve-deep: #714566;
   --mauve-tint: #f1e5ee;
-
   --slate: #4e6b84;
   --slate-deep: #3a5468;
   --slate-tint: #e1e8ee;
-
   --violet: #6e51a6;
   --violet-deep: #57408a;
   --violet-tint: #ebe5f5;
 
-  --clay: #b0451f;
-  --clay-deep: #93330f;
-  --clay-tint: #f5e4db;
-
-  /* --------------------------------------------------------------
-     semantic raws — surfaces, ink, hairlines, action, danger
-     -------------------------------------------------------------- */
-  --bg: #f5f5f2;
-  --bg-deep: #eeeee9;
-  --surface: #fefefc;
+  --bg: #faf7f3;
+  --bg-deep: #f3eee8;
+  --surface: #ffffff;
   --surface-raised: #ffffff;
-  --surface-recessed: #f4f4f0;
-  --surface-sunken: #ecece7;
+  --surface-recessed: #f3eee8;
+  --surface-sunken: #f3eee8;
 
-  --ink: #23252a;
-  --ink-soft: #565a61;
-  --ink-faint: #878b92;
-  --ink-faintest: #a8abb1;
+  --ink: #000b12;
+  --ink-muted: #545b62;
+  --ink-soft: var(--ink-muted);
+  --ink-faint: #746b62;
+  --ink-faintest: var(--ink-faint);
 
-  --line: #e0e0da;
-  --line-soft: #e8e8e2;
-  --line-strong: #23252a;
+  --line: #e8e0d7;
+  --line-soft: var(--line);
+  --line-strong: #8f857b;
 
-  --primary: #2e6b4f;
-  --primary-hover: #245740;
-  --on-primary: #f1f8f3;
+  --primary-hover: #ce4004;
+  --danger: #b42318;
+  --danger-deep: var(--danger);
+  --danger-tint: #fde8e6;
+  --on-danger: #ffffff;
 
-  --danger: #b0432d;
-  --danger-deep: #93341f;
-  --danger-tint: #f5e4df;
+  --excerpt-wash: var(--sand);
+  --best-match: rgba(196, 61, 4, 0.14);
+  --best-match-ring: rgba(196, 61, 4, 0.14);
 
-  --warn: var(--clay);
-  --warn-deep: var(--clay-deep);
-  --warn-tint: var(--clay-tint);
+  --shadow-sm: 0 1px 2px rgba(0, 11, 18, 0.06), 0 1px 1px rgba(0, 11, 18, 0.04);
+  --shadow-md: 0 6px 20px rgba(0, 11, 18, 0.07), 0 1px 3px rgba(0, 11, 18, 0.06);
+  --shadow-lg: 0 24px 48px -12px rgba(0, 11, 18, 0.18);
+  --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 10px 32px rgba(0, 11, 18, 0.12);
+  --shadow-soft: var(--shadow-sm);
+  --shadow-lift: var(--shadow-md);
+  --shadow-pop: var(--shadow-md);
+  --shadow-overlay: var(--shadow-lg);
 
-  /* teal evidence washes — the one sanctioned tinted text bg */
-  --excerpt-wash: #ecf3f0;
-  --best-match: rgba(14, 114, 104, 0.16);
-  --best-match-ring: rgba(14, 114, 104, 0.16);
-
-  /* depth */
-  --shadow-soft: 0 1px 2px rgba(35, 37, 42, 0.06);
-  --shadow-lift: 0 1px 3px rgba(35, 37, 42, 0.1);
-  --shadow-pop: 0 1px 2px rgba(35, 37, 42, 0.08), 0 8px 26px rgba(35, 37, 42, 0.13);
-  --shadow-overlay: 0 2px 6px rgba(35, 37, 42, 0.1), 0 16px 44px rgba(35, 37, 42, 0.18);
-
-  /* --------------------------------------------------------------
-     aliases — re-resolve automatically in dark; defined once
-     -------------------------------------------------------------- */
-  /* content-type hues */
   --type-video: var(--plum);
   --type-video-soft: var(--plum-tint);
   --type-pdf: var(--gold);
@@ -229,14 +269,13 @@
   --type-paper-soft: var(--slate-tint);
   --type-note: var(--gold);
   --type-note-soft: var(--gold-tint);
-  --type-ai: var(--teal);
-  --type-ai-soft: var(--teal-tint);
-  --type-insight: var(--teal);
-  --type-insight-soft: var(--teal-tint);
+  --type-ai: var(--info);
+  --type-ai-soft: var(--info-soft);
+  --type-insight: var(--info);
+  --type-insight-soft: var(--info-soft);
 
-  /* evidence classes */
-  --cite-source: var(--teal);
-  --cite-source-deep: var(--teal-deep);
+  --cite-source: var(--info);
+  --cite-source-deep: var(--info);
   --cite-note: var(--gold);
   --cite-note-deep: var(--gold-deep);
   --cite-derived: var(--violet);
@@ -244,74 +283,82 @@
   --cite-external: var(--slate);
   --cite-external-deep: var(--slate-deep);
   --cite-synthesis: var(--ink-faint);
-  --cite-warn: var(--clay);
+  --cite-warn: var(--warning);
 
-  /* context states */
-  --ctx-full: var(--fern);
-  --ctx-full-tint: var(--fern-tint);
+  --ctx-full: var(--brand-strong);
+  --ctx-full-tint: var(--brand-soft);
   --ctx-insights: var(--gold);
   --ctx-insights-tint: var(--gold-tint);
-  --ctx-off-ink: var(--ink-soft);
+  --ctx-off-ink: var(--ink-muted);
   --ctx-off-bg: var(--surface-raised);
 
-  /* motion — quick and quiet */
-  --motion-fast: 0.12s;
-  --motion-base: 0.15s;
-  --motion-slow: 0.25s;
+  --motion-fast: 0.16s;
+  --motion-base: 0.18s;
+  --motion-slow: 0.2s;
 
-  /* --------------------------------------------------------------
-     shadcn semantic slots — the contract existing components use
-     -------------------------------------------------------------- */
-  --radius: 5px;
+  --radius: 14px;
   --background: var(--bg);
   --foreground: var(--ink);
   --card: var(--surface);
   --card-foreground: var(--ink);
   --popover: var(--surface-raised);
   --popover-foreground: var(--ink);
-  --primary-foreground: var(--on-primary);
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--on-brand-strong);
   --secondary: var(--surface-recessed);
   --secondary-foreground: var(--ink);
   --muted: var(--surface-recessed);
-  --muted-foreground: var(--ink-soft);
+  --muted-foreground: var(--ink-muted);
   --accent: var(--surface-sunken);
   --accent-foreground: var(--ink);
   --destructive: var(--danger);
+  --destructive-foreground: var(--on-danger);
   --border: var(--line);
-  --input: var(--line);
-  --ring: var(--teal);
-  --chart-1: var(--fern);
-  --chart-2: var(--teal);
-  --chart-3: var(--gold);
-  --chart-4: var(--plum);
-  --chart-5: var(--slate);
-  --sidebar: var(--bg-deep);
-  --sidebar-foreground: var(--ink);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--on-primary);
-  --sidebar-accent: var(--surface);
-  --sidebar-accent-foreground: var(--ink);
-  --sidebar-border: var(--line);
-  --sidebar-ring: var(--teal);
+  --input: var(--line-strong);
+  --ring: var(--brand-strong);
+  --chart-1: var(--brand-strong);
+  --chart-2: var(--info);
+  --chart-3: var(--warning);
+  --chart-4: var(--success);
+  --chart-5: var(--ink-muted);
+  --sidebar: var(--nav-surface);
+  --sidebar-foreground: var(--on-nav);
+  --sidebar-primary: var(--nav-accent);
+  --sidebar-primary-foreground: var(--on-nav-accent);
+  --sidebar-accent: color-mix(in srgb, var(--on-nav) 12%, transparent);
+  --sidebar-accent-foreground: var(--on-nav);
+  --sidebar-border: var(--nav-line);
+  --sidebar-ring: var(--nav-accent);
 }
 
-/* ============================================================================
-   DARK — overrides raw layers only; var() aliases re-resolve on their own
-   ========================================================================== */
 .dark {
-  /* core palette */
-  --fern: #55b285;
-  --fern-deep: #6cc298;
-  --fern-tint: #1b2f25;
+  --brand: #ff7a3d;
+  --brand-strong: #ff7a3d;
+  --on-brand-strong: #0b1116;
+  --brand-soft: #2b160c;
+  --sand: #2a241e;
+  --success: #5fd39b;
+  --success-soft: #0f2a1e;
+  --warning: #f5b454;
+  --warning-soft: #2e2110;
+  --info: #8cb8ff;
+  --info-soft: #12223a;
+  --neutral-soft: #1e2730;
+
+  --nav-surface: #070b0f;
+
+  --glass-fill: rgba(20, 28, 35, 0.55);
+  --glass-fill-card: rgba(20, 28, 35, 0.8);
+  --glass-stroke: rgba(255, 255, 255, 0.14);
+  --glass-sheen: rgba(255, 255, 255, 0.22);
+  --scrim: rgba(0, 0, 0, 0.62);
+
   --sage: #93b084;
   --sage-deep: #a8c299;
   --sage-tint: #232b1d;
   --gold: #cfa13e;
   --gold-deep: #ddb55f;
   --gold-tint: #322b1b;
-  --teal: #3fb3a5;
-  --teal-deep: #64c5b9;
-  --teal-tint: #16302c;
   --plum: #a290d3;
   --plum-tint: #29253a;
   --mauve: #c892ba;
@@ -323,45 +370,33 @@
   --violet: #a995db;
   --violet-deep: #bcaae6;
   --violet-tint: #2b2540;
-  --clay: #f08a5c;
-  --clay-deep: #f5a07a;
-  --clay-tint: #35211a;
 
-  /* semantic raws */
-  --bg: #17181b;
-  --bg-deep: #121316;
-  --surface: #1e2024;
-  --surface-raised: #24262b;
-  --surface-recessed: #24262b;
-  --surface-sunken: #2b2d33;
+  --bg: #0b1116;
+  --bg-deep: #070b0f;
+  --surface: #141c23;
+  --surface-raised: #141c23;
+  --surface-recessed: #070b0f;
+  --surface-sunken: #070b0f;
 
-  --ink: #ecedea;
-  --ink-soft: #a9acb1;
-  --ink-faint: #74777d;
-  --ink-faintest: #63666c;
+  --ink: #f5f1ec;
+  --ink-muted: #a7b0b8;
+  --ink-faint: #798590;
 
-  --line: #2e3036;
-  --line-soft: #26282d;
-  --line-strong: #ecedea;
+  --line: #222c35;
+  --line-strong: #56636e;
 
-  --primary: #3d8e67;
-  --primary-hover: #479e74;
-  --on-primary: #ecf7f0;
+  --primary-hover: #ff8f5c;
+  --danger: #ff8f84;
+  --danger-tint: #33140f;
+  --on-danger: #0b1116;
 
-  --danger: #df7c63;
-  --danger-deep: #e9937d;
-  --danger-tint: #37231d;
+  --best-match: rgba(255, 122, 61, 0.22);
+  --best-match-ring: rgba(255, 122, 61, 0.22);
 
-  /* evidence washes */
-  --excerpt-wash: #1c2a28;
-  --best-match: rgba(63, 179, 165, 0.2);
-  --best-match-ring: rgba(63, 179, 165, 0.2);
-
-  /* depth */
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-lift: 0 1px 3px rgba(0, 0, 0, 0.45);
-  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 30px rgba(0, 0, 0, 0.5);
-  --shadow-overlay: 0 2px 6px rgba(0, 0, 0, 0.4), 0 20px 52px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 24px 48px -12px rgba(0, 0, 0, 0.7);
+  --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 32px rgba(0, 0, 0, 0.5);
 }
 
 @layer base {
@@ -408,10 +443,6 @@
     @apply transition-colors duration-150 ease-out;
   }
 
-  .sidebar-menu-item:hover {
-    background-color: var(--sidebar-accent) !important;
-  }
-
   /* Cards separate with hairlines, not shadows; hover raises the surface */
   .card-hover {
     @apply transition-colors duration-150 cursor-pointer;
@@ -445,5 +476,70 @@
 
   .w-md-editor-preview :where(.wmde-markdown ol) {
     list-style-type: decimal;
+  }
+}
+
+/* Unlayered so these beat the ghost button's hover utilities. */
+.sidebar-menu-item:hover {
+  background-color: color-mix(in srgb, var(--on-nav) 7%, transparent);
+}
+
+.sidebar-menu-item[data-active="true"],
+.sidebar-menu-item[data-active="true"]:hover {
+  background-color: color-mix(in srgb, var(--on-nav) 12%, transparent);
+}
+
+@layer components {
+  .srh-glass-scene {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-xl);
+    background: var(--sand);
+    padding: 32px;
+  }
+
+  .srh-glass-scene::before,
+  .srh-glass-scene::after {
+    content: "";
+    position: absolute;
+    border-radius: var(--radius-pill);
+    pointer-events: none;
+  }
+
+  .srh-glass-scene::before {
+    width: 260px;
+    height: 260px;
+    left: -40px;
+    top: -60px;
+    background: var(--brand);
+  }
+
+  .srh-glass-scene::after {
+    width: 200px;
+    height: 120px;
+    right: 40px;
+    bottom: -30px;
+    background: var(--apricot);
+  }
+
+  .srh-glass-scene > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .srh-glass {
+    border-radius: var(--radius-xl);
+    background: var(--glass-fill);
+    border: 1px solid var(--glass-stroke);
+    box-shadow: var(--shadow-glass);
+    backdrop-filter: blur(var(--blur-glass)) saturate(170%);
+    -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(170%);
+    padding: 24px;
+    color: var(--ink);
+  }
+
+  .srh-glass-strong {
+    backdrop-filter: blur(var(--blur-glass-strong)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-glass-strong)) saturate(180%);
   }
 }
