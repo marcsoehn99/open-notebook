@@ -22,6 +22,18 @@ class InvalidInputError(OpenNotebookError):
     pass
 
 
+class ConflictError(OpenNotebookError):
+    """Raised when a write conflicts with state that is already stored."""
+
+    pass
+
+
+class QuizSourceEmptyError(InvalidInputError):
+    """A selected source has no text the quiz can use."""
+
+    pass
+
+
 class NotFoundError(OpenNotebookError):
     """Raised when a requested resource is not found."""
 
@@ -36,6 +48,24 @@ class AuthenticationError(OpenNotebookError):
 
 class ConfigurationError(OpenNotebookError):
     """Raised when there's a configuration problem."""
+
+    pass
+
+
+class QuizPromptTooLargeError(ConfigurationError):
+    """The quiz prompt does not fit the token budget."""
+
+    pass
+
+
+class QuizModelOutputError(OpenNotebookError):
+    """The model did not return a quiz the deck checks accept."""
+
+    pass
+
+
+class QuizTimeoutError(OpenNotebookError):
+    """Quiz generation exceeded the job time limit."""
 
     pass
 

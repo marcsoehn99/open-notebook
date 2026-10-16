@@ -35,7 +35,11 @@ from open_notebook.domain.quiz import (
     to_prompt,
     truncate_slices,
 )
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import (
+    InvalidInputError,
+    QuizModelOutputError,
+    QuizSourceEmptyError,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -224,7 +228,7 @@ def test_truncate_slices_uses_an_equal_share():
         count_tokens=len,
     )
     assert slices == {"source:a": "aa", "source:b": "bb"}
-    with pytest.raises(ValueError):
+    with pytest.raises(QuizSourceEmptyError):
         truncate_slices({}, 10, len)
 
 
@@ -386,20 +390,23 @@ def test_parse_generated_rejects_a_quote_that_is_not_in_the_slice():
     )
     assert parsed[0].type == "short"
     bad = json.dumps(good).replace(QUOTE, "not in the source")
-    with pytest.raises(ValueError):
+    with pytest.raises(QuizModelOutputError) as bad_quote:
         parse_generated(
             bad,
             num_questions=1,
             allowed_types=frozenset({"short"}),
             slices={SOURCE: SLICE},
         )
-    with pytest.raises(ValueError):
+    assert "validation error" not in str(bad_quote.value)
+    with pytest.raises(QuizModelOutputError) as bad_json:
         parse_generated(
             "```json\n" + json.dumps(good) + "\n```",
             num_questions=1,
             allowed_types=frozenset(QUESTION_TYPES),
             slices={SOURCE: SLICE},
         )
+    assert str(bad_json.value) == "quiz JSON did not match the schema"
+    assert "Expecting value" not in str(bad_json.value)
 
 
 def test_pending_play_has_no_cards_and_ready_is_completed():
@@ -459,7 +466,7 @@ async def test_generate_node_rejects_invalid_json(monkeypatch):
         "open_notebook.graphs.quiz.provision_langchain_model",
         _provision,
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(QuizModelOutputError) as caught:
         await generate_node(
             {
                 "quiz_id": "quiz:1",
@@ -469,3 +476,56 @@ async def test_generate_node_rejects_invalid_json(monkeypatch):
             },
             {},
         )
+    assert str(caught.value) == "quiz JSON did not match the schema"
+    assert "Expecting value" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_generate_node_repairs_invalid_json_once(monkeypatch):
+    from open_notebook.graphs.quiz import generate_node
+
+    good = {
+        "questions": [
+            {
+                "type": "short",
+                "stem": "Name the city.",
+                "accepted": ["Paris"],
+                "explanation": "The sentence names it.",
+                "quote": QUOTE,
+                "source_id": SOURCE,
+            }
+        ]
+    }
+    prompts: list[str] = []
+
+    class _Message:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    class _Model:
+        async def ainvoke(self, prompt: str) -> _Message:
+            prompts.append(prompt)
+            if len(prompts) == 1:
+                return _Message("not-json")
+            return _Message(json.dumps(good))
+
+    async def _provision(*args: object, **kwargs: object) -> _Model:
+        return _Model()
+
+    monkeypatch.setattr(
+        "open_notebook.graphs.quiz.provision_langchain_model",
+        _provision,
+    )
+    result = await generate_node(
+        {
+            "quiz_id": "quiz:1",
+            "model_id": "model:1",
+            "slices": {SOURCE: SLICE},
+            "settings": _settings(num_questions=1, question_types=["short"]),
+        },
+        {},
+    )
+    assert len(result["deck"]) == 1
+    assert len(prompts) == 2
+    assert "failed validation" in prompts[1]
+    assert "Expecting value" not in prompts[1]

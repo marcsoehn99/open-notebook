@@ -20,7 +20,11 @@ from open_notebook.domain.quiz import (
     seal_deck,
     template_data,
 )
-from open_notebook.exceptions import OpenNotebookError
+from open_notebook.exceptions import (
+    OpenNotebookError,
+    QuizModelOutputError,
+    QuizPromptTooLargeError,
+)
 from open_notebook.utils import clean_thinking_content, token_count
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
@@ -37,7 +41,7 @@ class QuizState(TypedDict, total=False):
 def _refuse_oversized(prompt: str) -> None:
     counted = token_count(prompt)
     if counted > QUIZ_PROMPT_TOKEN_LIMIT:
-        raise ValueError(
+        raise QuizPromptTooLargeError(
             f"quiz prompt has {counted} tokens, above {QUIZ_PROMPT_TOKEN_LIMIT}"
         )
 
@@ -82,7 +86,7 @@ async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
 
         try:
             questions = await _parsed(await _reply(model, prompt))
-        except ValueError as error:
+        except QuizModelOutputError as error:
             repair = (
                 f"{prompt}\n\nThe previous JSON failed validation: {error}\n"
                 "Return only the JSON object."

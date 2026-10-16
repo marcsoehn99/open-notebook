@@ -51,6 +51,7 @@ from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
+    ConflictError,
     ExternalServiceError,
     InvalidInputError,
     NetworkError,
@@ -310,6 +311,15 @@ async def not_found_error_handler(request: Request, exc: NotFoundError):
 async def invalid_input_error_handler(request: Request, exc: InvalidInputError):
     return JSONResponse(
         status_code=400,
+        content={"detail": str(exc)},
+        headers=_cors_headers(request),
+    )
+
+
+@app.exception_handler(ConflictError)
+async def conflict_error_handler(request: Request, exc: ConflictError):
+    return JSONResponse(
+        status_code=409,
         content={"detail": str(exc)},
         headers=_cors_headers(request),
     )

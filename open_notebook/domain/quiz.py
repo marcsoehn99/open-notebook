@@ -14,8 +14,13 @@ from open_notebook.domain.base import ObjectModel
 from open_notebook.domain.notebook import Notebook
 from open_notebook.exceptions import (
     ConfigurationError,
+    ConflictError,
     InvalidInputError,
     NotFoundError,
+    QuizModelOutputError,
+    QuizPromptTooLargeError,
+    QuizSourceEmptyError,
+    QuizTimeoutError,
 )
 
 QuestionType = Literal["mc", "multi", "short", "cloze"]
@@ -29,6 +34,23 @@ QUIZ_SOURCE_TOKEN_BUDGET = 80_000
 MIN_QUOTE_CHARS = 15
 MAX_QUESTIONS = 10
 CLOZE_BLANK = "____"
+QUIZ_ERROR_INVALID_OUTPUT = "invalid_output"
+QUIZ_ERROR_EMPTY_SOURCE = "empty_source"
+QUIZ_ERROR_TIMEOUT = "timeout"
+QUIZ_ERROR_NOT_CONFIGURED = "not_configured"
+QUIZ_ERROR_TOO_LARGE = "too_large"
+QUIZ_ERROR_FAILED = "failed"
+QUIZ_ERROR_CODES = frozenset(
+    {
+        QUIZ_ERROR_INVALID_OUTPUT,
+        QUIZ_ERROR_EMPTY_SOURCE,
+        QUIZ_ERROR_TIMEOUT,
+        QUIZ_ERROR_NOT_CONFIGURED,
+        QUIZ_ERROR_TOO_LARGE,
+        QUIZ_ERROR_FAILED,
+    }
+)
+_COMMAND_IN_PROGRESS = frozenset({"new", "queued", "running"})
 
 BLOOM_BY_DIFFICULTY: dict[Difficulty, str] = {
     "easy": "remember",
@@ -275,15 +297,35 @@ def normalize_text(value: str) -> str:
     return " ".join(value.casefold().split())
 
 
+def public_error_code(value: str | None) -> str | None:
+    if value in QUIZ_ERROR_CODES:
+        return value
+    return None
+
+
+def quiz_failure_code(error: BaseException) -> str:
+    if isinstance(error, QuizTimeoutError):
+        return QUIZ_ERROR_TIMEOUT
+    if isinstance(error, QuizModelOutputError):
+        return QUIZ_ERROR_INVALID_OUTPUT
+    if isinstance(error, QuizPromptTooLargeError):
+        return QUIZ_ERROR_TOO_LARGE
+    if isinstance(error, QuizSourceEmptyError):
+        return QUIZ_ERROR_EMPTY_SOURCE
+    if isinstance(error, ConfigurationError):
+        return QUIZ_ERROR_NOT_CONFIGURED
+    return QUIZ_ERROR_FAILED
+
+
 def truncate_slices(
     texts: Mapping[str, str],
     max_tokens: int,
     count_tokens: Callable[[str], int],
 ) -> dict[str, str]:
     if not texts:
-        raise ValueError("quiz context has no sources")
+        raise QuizSourceEmptyError("quiz context has no sources")
     if max_tokens < 0:
-        raise ValueError("quiz token budget is negative")
+        raise InvalidInputError("quiz token budget is negative")
     share = max_tokens // len(texts)
     slices: dict[str, str] = {}
     for source_id, text in texts.items():
@@ -294,7 +336,7 @@ def truncate_slices(
 def _prefix_within(text: str, share: int, count_tokens: Callable[[str], int]) -> str:
     if count_tokens(text) <= share:
         if text == "":
-            raise ValueError("source text is empty")
+            raise QuizSourceEmptyError("source text is empty")
         return text
     low = 0
     high = len(text)
@@ -307,7 +349,7 @@ def _prefix_within(text: str, share: int, count_tokens: Callable[[str], int]) ->
         else:
             high = mid - 1
     if best == 0:
-        raise ValueError("source slice is empty")
+        raise QuizPromptTooLargeError("source slice is empty")
     return text[:best]
 
 
@@ -380,16 +422,16 @@ def validate_deck(
     slices: Mapping[str, str],
 ) -> None:
     if len(questions) != num_questions:
-        raise ValueError("question count does not match the quiz settings")
+        raise QuizModelOutputError("question count does not match the quiz settings")
     for question in questions:
         if question.type not in allowed_types:
-            raise ValueError(f"question type {question.type} is not allowed")
+            raise QuizModelOutputError(f"question type {question.type} is not allowed")
         if question.source_id not in slices:
-            raise ValueError("question cites a source that was not sent")
+            raise QuizModelOutputError("question cites a source that was not sent")
         if not quote_is_verbatim(question.quote, slices[question.source_id]):
-            raise ValueError("quote is not a verbatim slice of the source text")
+            raise QuizModelOutputError("quote is not a verbatim slice of the source text")
         if not question.explanation.strip():
-            raise ValueError("explanation is empty")
+            raise QuizModelOutputError("explanation is empty")
         _validate_generated_key(question)
 
 
@@ -401,30 +443,30 @@ def _validate_generated_key(question: GeneratedQuestion) -> None:
         _require_choice_indexes(question, exact=None)
         return
     if question.options or question.correct_indexes:
-        raise ValueError("short and cloze questions do not take options")
+        raise QuizModelOutputError("short and cloze questions do not take options")
     if not question.accepted or any(not item.strip() for item in question.accepted):
-        raise ValueError("accepted answers must be non-blank")
+        raise QuizModelOutputError("accepted answers must be non-blank")
     if question.type == "cloze" and CLOZE_BLANK not in question.stem:
-        raise ValueError("cloze stem must contain ____")
+        raise QuizModelOutputError("cloze stem must contain ____")
 
 
 def _require_choice_indexes(question: GeneratedQuestion, *, exact: int | None) -> None:
     if len(question.options) < 2:
-        raise ValueError("choice questions need at least two options")
+        raise QuizModelOutputError("choice questions need at least two options")
     if any(not option.strip() for option in question.options):
-        raise ValueError("options must be non-blank")
+        raise QuizModelOutputError("options must be non-blank")
     indexes = question.correct_indexes
     if len(indexes) != len(set(indexes)):
-        raise ValueError("correct indexes must be unique")
+        raise QuizModelOutputError("correct indexes must be unique")
     option_count = len(question.options)
     if any(index < 0 or index >= option_count for index in indexes):
-        raise ValueError("correct index is out of range")
+        raise QuizModelOutputError("correct index is out of range")
     if exact is not None:
         if len(indexes) != exact:
-            raise ValueError("multiple choice needs exactly one correct index")
+            raise QuizModelOutputError("multiple choice needs exactly one correct index")
         return
     if not indexes or len(indexes) >= option_count:
-        raise ValueError("multi-select needs a non-empty proper subset")
+        raise QuizModelOutputError("multi-select needs a non-empty proper subset")
 
 
 def parse_generated(
@@ -438,7 +480,8 @@ def parse_generated(
         payload = json.loads(cleaned_json)
         deck = GeneratedDeck.model_validate(payload)
     except (json.JSONDecodeError, ValidationError) as error:
-        raise ValueError(str(error)) from error
+        logger.warning(f"quiz model output failed schema checks: {error}")
+        raise QuizModelOutputError("quiz JSON did not match the schema") from error
     questions = deck.questions
     validate_deck(
         questions,
@@ -783,7 +826,11 @@ class QuizReady(QuizSummary):
 
 class Quiz(ObjectModel):
     table_name: ClassVar[str] = "quiz"
-    nullable_fields: ClassVar[set[str]] = {"command", "topic_prompt"}
+    nullable_fields: ClassVar[set[str]] = {
+        "command",
+        "topic_prompt",
+        "error_message",
+    }
     notebook: str
     command: str | None = None
     model_id: str
@@ -793,6 +840,8 @@ class Quiz(ObjectModel):
     topic_prompt: str | None = None
     question_types: list[str]
     language: str
+    status: str | None = None
+    error_message: str | None = None
 
     def _prepare_save_data(self) -> dict[str, Any]:
         data = super()._prepare_save_data()
@@ -840,9 +889,27 @@ class QuizAttempt(ObjectModel):
         return data
 
 
+class QuizAnswer(ObjectModel):
+    table_name: ClassVar[str] = "quiz_answer"
+    quiz: str
+    attempt: str
+    question_id: str
+    submission: dict[str, Any]
+
+    def _prepare_save_data(self) -> dict[str, Any]:
+        data = super()._prepare_save_data()
+        data["quiz"] = ensure_record_id(data["quiz"])
+        data["attempt"] = ensure_record_id(data["attempt"])
+        return data
+
+
 def _summary(quiz: Quiz, status: str, error_message: str | None) -> QuizSummary:
     if not quiz.id:
         raise ValueError("quiz has no id")
+    if status == "failed":
+        error_message = public_error_code(error_message) or QUIZ_ERROR_FAILED
+    else:
+        error_message = None
     return QuizSummary(
         id=str(quiz.id),
         status=status,
@@ -873,6 +940,31 @@ async def _read_command(quiz: Quiz) -> tuple[str, str | None]:
     except Exception as error:
         logger.warning(f"Failed to get command status for {quiz.command}: {error}")
         return "unknown", None
+
+
+def _persisted_status(quiz: Quiz) -> str | None:
+    status = quiz.status
+    if isinstance(status, str) and status.strip():
+        return status
+    return None
+
+
+async def resolve_status(quiz: Quiz) -> tuple[str, str | None]:
+    persisted = _persisted_status(quiz)
+    if persisted == "completed":
+        return "completed", None
+    if persisted == "failed":
+        return "failed", public_error_code(quiz.error_message) or QUIZ_ERROR_FAILED
+    command_status, _command_error = await _read_command(quiz)
+    if command_status == "completed":
+        return "completed", None
+    if command_status == "failed" and persisted != "queued":
+        return "failed", public_error_code(quiz.error_message) or QUIZ_ERROR_FAILED
+    if command_status in _COMMAND_IN_PROGRESS:
+        return command_status, None
+    if persisted:
+        return persisted, None
+    return "unknown", None
 
 
 async def resolve_quiz_model_id(name: str) -> str:
@@ -912,19 +1004,13 @@ async def create_quiz(notebook_id: str, settings: QuizSettings) -> QuizSummary:
         topic_prompt=settings.topic_prompt,
         question_types=list(settings.question_types),
         language=settings.language,
+        status="new",
     )
     await quiz.save()
     try:
-        import commands.quiz_commands  # noqa: F401
-
-        from api.command_service import CommandService
-
-        command_id = await CommandService.submit_command_job(
-            "open_notebook",
-            "generate_quiz",
-            {"quiz_id": str(quiz.id)},
-        )
+        command_id = await _submit_generation(quiz)
         quiz.command = command_id
+        quiz.status = "queued"
         await quiz.save()
     except Exception:
         try:
@@ -932,7 +1018,53 @@ async def create_quiz(notebook_id: str, settings: QuizSettings) -> QuizSummary:
         except Exception:
             logger.exception(f"failed to delete quiz {quiz.id} after submit failed")
         raise
-    return _summary(quiz, "new", None)
+    return _summary(quiz, "queued", None)
+
+
+async def _submit_generation(quiz: Quiz) -> str:
+    import commands.quiz_commands  # noqa: F401
+    from api.command_service import CommandService
+
+    if not quiz.id:
+        raise NotFoundError("quiz not found")
+    return await CommandService.submit_command_job(
+        "open_notebook",
+        "generate_quiz",
+        {"quiz_id": str(quiz.id)},
+    )
+
+
+async def retry_quiz(quiz_id: str) -> QuizSummary:
+    quiz = await Quiz.get(quiz_id)
+    status, code = await resolve_status(quiz)
+    if status != "failed":
+        raise InvalidInputError("quiz is not failed")
+    if quiz.status != "failed":
+        quiz.status = "failed"
+        quiz.error_message = code or QUIZ_ERROR_FAILED
+        await quiz.save()
+    claimed = await repo_query(
+        "UPDATE $id SET status = 'queued', error_message = NONE "
+        "WHERE status = 'failed'",
+        {"id": ensure_record_id(str(quiz.id))},
+    )
+    if not claimed:
+        raise InvalidInputError("quiz is not failed")
+    quiz.status = "queued"
+    quiz.error_message = None
+    try:
+        command_id = await _submit_generation(quiz)
+    except Exception:
+        quiz.status = "failed"
+        quiz.error_message = QUIZ_ERROR_FAILED
+        try:
+            await quiz.save()
+        except Exception:
+            logger.exception(f"could not store failure for quiz {quiz.id}")
+        raise
+    quiz.command = command_id
+    await quiz.save()
+    return _summary(quiz, "queued", None)
 
 
 async def list_quizzes(notebook_id: str) -> list[QuizSummary]:
@@ -944,7 +1076,7 @@ async def list_quizzes(notebook_id: str) -> list[QuizSummary]:
     summaries: list[QuizSummary] = []
     for row in rows:
         quiz = Quiz(**row)
-        status, error_message = await _read_command(quiz)
+        status, error_message = await resolve_status(quiz)
         summaries.append(_summary(quiz, status, error_message))
     return summaries
 
@@ -1029,9 +1161,99 @@ def _answers_from_attempt(attempt: QuizAttempt) -> tuple[StoredAnswer, ...]:
     return tuple(stored)
 
 
+async def _answer_rows(
+    attempt_id: str, question_id: str | None = None
+) -> list[dict[str, Any]]:
+    if question_id is None:
+        query = "SELECT * FROM quiz_answer WHERE attempt = $attempt"
+        params: dict[str, Any] = {"attempt": ensure_record_id(attempt_id)}
+    else:
+        query = (
+            "SELECT * FROM quiz_answer WHERE attempt = $attempt "
+            "AND question_id = $question_id LIMIT 1"
+        )
+        params = {
+            "attempt": ensure_record_id(attempt_id),
+            "question_id": question_id,
+        }
+    rows = await repo_query(query, params)
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _stored_from_row(row: Mapping[str, Any]) -> StoredAnswer:
+    submission = row.get("submission")
+    if not isinstance(submission, Mapping):
+        raise ValueError("stored submission is invalid")
+    return StoredAnswer(
+        question_id=str(row.get("question_id") or ""),
+        submission=_submission_from_payload(submission),
+    )
+
+
+async def _answers_for(attempt: QuizAttempt) -> tuple[StoredAnswer, ...]:
+    rows: list[dict[str, Any]] = []
+    if attempt.id:
+        rows = await _answer_rows(str(attempt.id))
+    by_id = {answer.question_id: answer for answer in _answers_from_attempt(attempt)}
+    for row in rows:
+        stored = _stored_from_row(row)
+        by_id[stored.question_id] = stored
+    return tuple(by_id.values())
+
+
+async def _insert_answer(
+    attempt: QuizAttempt, question_id: str, submission: Submission
+) -> None:
+    if not attempt.id:
+        raise NotFoundError("attempt not found")
+    row = QuizAnswer(
+        quiz=str(attempt.quiz),
+        attempt=str(attempt.id),
+        question_id=question_id,
+        submission=_submission_payload(submission),
+    )
+    try:
+        await row.save()
+    except Exception as error:
+        existing = await _answer_rows(str(attempt.id), question_id)
+        if existing:
+            raise ConflictError("question already answered") from error
+        raise
+
+
+async def _ready_question(
+    quiz_id: str, question_id: str
+) -> tuple[Quiz, tuple[SealedQuestion, ...], SealedQuestion]:
+    quiz = await Quiz.get(quiz_id)
+    status, _error_message = await resolve_status(quiz)
+    if status != "completed":
+        raise InvalidInputError("quiz is not ready")
+    questions = await _load_deck(str(quiz.id))
+    question = next(
+        (item for item in questions if item.question_id == question_id), None
+    )
+    if question is None:
+        raise NotFoundError("question not found")
+    return quiz, questions, question
+
+
+async def start_attempt(quiz_id: str) -> str:
+    quiz = await Quiz.get(quiz_id)
+    status, _error_message = await resolve_status(quiz)
+    if status != "completed":
+        raise InvalidInputError("quiz is not ready")
+    questions = await _load_deck(str(quiz.id))
+    if not questions:
+        raise InvalidInputError("quiz is not ready")
+    token = str(uuid.uuid4())
+    attempt = QuizAttempt(quiz=str(quiz.id), token=token, answers=[])
+    await attempt.save()
+    return token
+
+
 async def load_play(quiz_id: str, attempt_id: str | None) -> QuizPending | QuizReady:
     quiz = await Quiz.get(quiz_id)
-    status, error_message = await _read_command(quiz)
+    status, error_message = await resolve_status(quiz)
     summary = _summary(quiz, status, error_message)
     if status != "completed":
         return QuizPending.model_validate(summary.model_dump())
@@ -1040,7 +1262,7 @@ async def load_play(quiz_id: str, attempt_id: str | None) -> QuizPending | QuizR
     if attempt_id:
         attempt = await _find_attempt(str(quiz.id), attempt_id)
         if attempt is not None:
-            answers = _answers_from_attempt(attempt)
+            answers = await _answers_for(attempt)
     by_id = {answer.question_id: answer for answer in answers}
     cards: list[PlayCard] = []
     for question in questions:
@@ -1075,36 +1297,18 @@ async def commit_answer(
 ) -> Verdict:
     if not attempt_id.strip():
         raise InvalidInputError("attempt_id is required")
-    quiz = await Quiz.get(quiz_id)
-    status, _error_message = await _read_command(quiz)
-    if status != "completed":
-        raise InvalidInputError("quiz is not ready")
-    questions = await _load_deck(str(quiz.id))
-    question = next(
-        (item for item in questions if item.question_id == question_id), None
-    )
-    if question is None:
-        raise NotFoundError("question not found")
+    quiz, questions, question = await _ready_question(quiz_id, question_id)
+    attempt = await _find_attempt(str(quiz.id), attempt_id)
+    if attempt is None or not attempt.id:
+        raise NotFoundError("attempt not found")
     if submission.type != question.type:
         raise InvalidInputError("submission type does not match the question")
-    attempt = await _find_attempt(str(quiz.id), attempt_id)
-    if attempt is None:
-        attempt = QuizAttempt(quiz=str(quiz.id), token=attempt_id, answers=[])
-        try:
-            await attempt.save()
-        except Exception:
-            attempt = await _find_attempt(str(quiz.id), attempt_id)
-            if attempt is None:
-                raise
-    existing = _answers_from_attempt(attempt)
-    incoming = StoredAnswer(question_id=question_id, submission=submission)
-    merged = merge_answer(existing, incoming)
-    stored = next(
-        answer for answer in merged if answer.question_id == question_id
-    )
-    if merged != existing:
-        attempt.answers = [_answer_payload(answer) for answer in merged]
-        await attempt.save()
+    existing = await _answers_for(attempt)
+    if any(answer.question_id == question_id for answer in existing):
+        raise ConflictError("question already answered")
+    await _insert_answer(attempt, question_id, submission)
+    stored = StoredAnswer(question_id=question_id, submission=submission)
+    merged = existing + (stored,)
     return Verdict(
         attempt_id=attempt_id,
         question_id=question_id,
@@ -1119,22 +1323,11 @@ async def commit_answer(
 async def explain_committed(
     quiz_id: str, attempt_id: str, question_id: str
 ) -> Explanation:
-    quiz = await Quiz.get(quiz_id)
-    status, _error_message = await _read_command(quiz)
-    if status != "completed":
-        raise InvalidInputError("quiz is not ready")
-    questions = await _load_deck(str(quiz.id))
-    question = next(
-        (item for item in questions if item.question_id == question_id), None
-    )
-    if question is None:
-        raise NotFoundError("question not found")
+    quiz, _questions, question = await _ready_question(quiz_id, question_id)
     attempt = await _find_attempt(str(quiz.id), attempt_id)
     if attempt is None:
-        raise InvalidInputError(
-            "answer this question before asking for an explanation"
-        )
-    answers = _answers_from_attempt(attempt)
+        raise NotFoundError("attempt not found")
+    answers = await _answers_for(attempt)
     if not any(answer.question_id == question_id for answer in answers):
         raise InvalidInputError(
             "answer this question before asking for an explanation"

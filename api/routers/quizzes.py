@@ -22,6 +22,8 @@ from open_notebook.domain.quiz import (
     load_play,
     parse_settings,
     resolve_quiz_model_id,
+    retry_quiz,
+    start_attempt,
 )
 
 # ObjectModel.get("quiz:...") resolves only after Quiz is imported.
@@ -54,6 +56,10 @@ class ExplainRequest(BaseModel):
     attempt_id: str
 
 
+class AttemptStarted(BaseModel):
+    attempt_id: str
+
+
 @router.post("/notebooks/{notebook_id}/quizzes", response_model=QuizSummary)
 async def post_quiz(notebook_id: str, body: CreateQuizRequest) -> QuizSummary:
     model_id = await resolve_quiz_model_id(configured_model_name())
@@ -79,6 +85,17 @@ async def get_quiz(
     quiz_id: str, attempt_id: str | None = None
 ) -> QuizReady | QuizPending:
     return await load_play(quiz_id, attempt_id)
+
+
+@router.post("/quizzes/{quiz_id}/attempts/start", response_model=AttemptStarted)
+async def post_attempt_start(quiz_id: str) -> AttemptStarted:
+    attempt_id = await start_attempt(quiz_id)
+    return AttemptStarted(attempt_id=attempt_id)
+
+
+@router.post("/quizzes/{quiz_id}/retry", response_model=QuizSummary)
+async def post_retry(quiz_id: str) -> QuizSummary:
+    return await retry_quiz(quiz_id)
 
 
 @router.post("/quizzes/{quiz_id}/attempts", response_model=Verdict)
