@@ -1,0 +1,3 @@
+REMOVE TABLE IF EXISTS quiz_attempt;
+REMOVE TABLE IF EXISTS quiz_question;
+REMOVE TABLE IF EXISTS quiz;

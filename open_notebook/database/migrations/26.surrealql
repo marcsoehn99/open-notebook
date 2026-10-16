@@ -1,0 +1,41 @@
+DEFINE TABLE IF NOT EXISTS quiz SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS notebook ON TABLE quiz TYPE record<notebook>;
+DEFINE FIELD IF NOT EXISTS command ON TABLE quiz TYPE option<record<command>>;
+DEFINE FIELD IF NOT EXISTS model_id ON TABLE quiz TYPE record<model>;
+DEFINE FIELD IF NOT EXISTS source_ids ON TABLE quiz TYPE array<record<source>>;
+DEFINE FIELD IF NOT EXISTS num_questions ON TABLE quiz TYPE int;
+DEFINE FIELD IF NOT EXISTS difficulty ON TABLE quiz TYPE string;
+DEFINE FIELD IF NOT EXISTS topic_prompt ON TABLE quiz TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS question_types ON TABLE quiz TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS language ON TABLE quiz TYPE string;
+DEFINE FIELD IF NOT EXISTS created ON TABLE quiz DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE quiz DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS quiz_question SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS quiz ON TABLE quiz_question TYPE record<quiz>;
+DEFINE FIELD IF NOT EXISTS run_id ON TABLE quiz_question TYPE string;
+DEFINE FIELD IF NOT EXISTS question_id ON TABLE quiz_question TYPE string;
+DEFINE FIELD IF NOT EXISTS position ON TABLE quiz_question TYPE int;
+DEFINE FIELD IF NOT EXISTS type ON TABLE quiz_question TYPE string;
+DEFINE FIELD IF NOT EXISTS stem ON TABLE quiz_question TYPE string;
+DEFINE FIELD IF NOT EXISTS options ON TABLE quiz_question FLEXIBLE TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS correct_option_ids ON TABLE quiz_question TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS accepted ON TABLE quiz_question TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS explanation ON TABLE quiz_question TYPE string;
+DEFINE FIELD IF NOT EXISTS quote ON TABLE quiz_question TYPE string;
+DEFINE FIELD IF NOT EXISTS source_id ON TABLE quiz_question TYPE record<source>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE quiz_question DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE quiz_question DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS quiz_attempt SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS quiz ON TABLE quiz_attempt TYPE record<quiz>;
+DEFINE FIELD IF NOT EXISTS token ON TABLE quiz_attempt TYPE string;
+DEFINE FIELD IF NOT EXISTS answers ON TABLE quiz_attempt FLEXIBLE TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE quiz_attempt DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE quiz_attempt DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_quiz_attempt_token ON TABLE quiz_attempt COLUMNS quiz, token UNIQUE CONCURRENTLY;
+
+DEFINE EVENT IF NOT EXISTS quiz_delete ON TABLE quiz WHEN ($after == NONE) THEN {
+    delete quiz_question where quiz == $before.id;
+    delete quiz_attempt where quiz == $before.id;
+};

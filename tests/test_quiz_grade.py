@@ -1,6 +1,7 @@
 """Grade, shuffle, and quote checks with plain data. No database and no model."""
 
 import json
+from pathlib import Path
 from typing import get_args
 
 import pytest
@@ -35,6 +36,8 @@ from open_notebook.domain.quiz import (
     truncate_slices,
 )
 from open_notebook.exceptions import InvalidInputError
+
+ROOT = Path(__file__).resolve().parents[1]
 
 SOURCE = "source:essay"
 QUOTE = "capital is Paris"
@@ -425,3 +428,14 @@ def test_pending_play_has_no_cards_and_ready_is_completed():
     )
     assert ready.status == "completed"
     assert "cards" in ready.model_dump()
+
+
+def test_router_does_not_name_sealed_or_generated_types():
+    text = (ROOT / "api/routers/quizzes.py").read_text()
+    assert "SealedMc" not in text
+    assert "GeneratedQuestion" not in text
+
+
+def test_prompt_template_reads_question_types():
+    text = (ROOT / "prompts/quiz/generate.jinja").read_text()
+    assert "QUESTION_TYPES" in text

@@ -15,6 +15,7 @@ from .embedding_commands import (
     rebuild_embeddings_command,
 )
 from .podcast_commands import generate_podcast_command
+from .quiz_commands import generate_quiz_command
 from .source_commands import process_source_command
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "rebuild_embeddings_command",
     # Other commands
     "generate_podcast_command",
+    "generate_quiz_command",
     "process_source_command",
 ]
