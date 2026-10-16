@@ -47,7 +47,7 @@ def langfuse_callbacks() -> list[BaseCallbackHandler]:
     if settings is None:
         return []
 
-    # The v3 client reads LANGFUSE_HOST at construction. LANGFUSE_BASE_URL is
+    # The client reads LANGFUSE_HOST at construction. LANGFUSE_BASE_URL is
     # only an alias here, so copy the resolved host before the SDK is imported.
     os.environ["LANGFUSE_HOST"] = settings.host
     try:

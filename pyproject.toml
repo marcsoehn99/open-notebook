@@ -35,8 +35,8 @@ dependencies = [
     "langchain-groq>=1.1.1,<2",
     "langchain-mistralai>=1.1.1,<2",
     # Optional tracing. Imported only when both Langfuse keys are set.
-    # v3 CallbackHandler API (langfuse.langchain). v4 is a different client.
-    "langfuse>=3,<4",
+    # v4.7+ writes directly to Langfuse v4 ingestion (older SDKs are delayed ~15 min).
+    "langfuse>=4.7,<5",
     "tomli>=2.0.2",
     "python-dotenv>=1.2.2",
     "httpx[socks]>=0.27.0",
