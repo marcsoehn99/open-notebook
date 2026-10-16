@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import axios from 'axios'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -20,6 +21,8 @@ import {
   Submission,
   Verdict,
   isQuizReady,
+  quizErrorDetail,
+  quizIsFailed,
 } from '@/lib/types/quiz'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -65,10 +68,36 @@ function attemptKey(quizId: string) {
   return `quiz-attempt:${quizId}`
 }
 
-function mintAttempt(quizId: string) {
-  const token = crypto.randomUUID()
-  sessionStorage.setItem(attemptKey(quizId), token)
-  return token
+const attemptStarts = new Map<string, Promise<string>>()
+
+function httpStatus(error: unknown): number | undefined {
+  if (axios.isAxiosError(error)) {
+    return error.response?.status
+  }
+  return undefined
+}
+
+function ensureAttempt(quizId: string): Promise<string> {
+  const existing = sessionStorage.getItem(attemptKey(quizId))
+  if (existing) {
+    return Promise.resolve(existing)
+  }
+  const inflight = attemptStarts.get(quizId)
+  if (inflight) {
+    return inflight
+  }
+  const pending = quizzesApi
+    .start(quizId)
+    .then((started) => {
+      sessionStorage.setItem(attemptKey(quizId), started.attempt_id)
+      return started.attempt_id
+    })
+    .catch((error: unknown) => {
+      attemptStarts.delete(quizId)
+      throw error
+    })
+  attemptStarts.set(quizId, pending)
+  return pending
 }
 
 export function QuizDialog({
@@ -146,7 +175,6 @@ export function QuizDialog({
     try {
       const created = await quizzesApi.create(notebook.id, body)
       setQuizId(created.id)
-      mintAttempt(created.id)
     } catch {
       toast.error(t('quiz.createFailed'))
     } finally {
@@ -360,15 +388,32 @@ function QuizPlayer({
   const [showScore, setShowScore] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
   const [sourceId, setSourceId] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState(false)
   const playQuery = useQuiz(quizId, attemptId)
   const play = playQuery.data
+  const ready = play && isQuizReady(play) ? play : null
 
   useEffect(() => {
-    const existing = sessionStorage.getItem(attemptKey(quizId))
-    setAttemptId(existing ?? mintAttempt(quizId))
-  }, [quizId])
+    if (!ready) {
+      return
+    }
+    let cancelled = false
+    ensureAttempt(quizId)
+      .then((id) => {
+        if (!cancelled) {
+          setAttemptId(id)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast.error(t('quiz.createFailed'))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [quizId, ready, t])
 
-  const ready = play && isQuizReady(play) ? play : null
   const card = ready?.cards[index]
   const prompt = card?.prompt
   const shown: CardResult | null =
@@ -402,8 +447,13 @@ function QuizPlayer({
       await queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.quiz(quizId, attemptId),
       })
-    } catch {
-      toast.error(t('quiz.submitFailed'))
+    } catch (error) {
+      if (httpStatus(error) === 409) {
+        toast.error(t('quiz.alreadyAnswered'))
+        await queryClient.invalidateQueries({ queryKey: ['quizzes', quizId] })
+      } else {
+        toast.error(t('quiz.submitFailed'))
+      }
     } finally {
       setSubmitting(false)
     }
@@ -421,38 +471,65 @@ function QuizPlayer({
     }
   }
 
-  function repeat() {
-    setAttemptId(mintAttempt(quizId))
-    setIndex(0)
-    setVerdict(null)
-    setExplanation(null)
-    setShowScore(false)
+  async function repeat() {
+    attemptStarts.delete(quizId)
+    sessionStorage.removeItem(attemptKey(quizId))
+    try {
+      const id = await ensureAttempt(quizId)
+      setAttemptId(id)
+      setIndex(0)
+      setVerdict(null)
+      setExplanation(null)
+      setShowScore(false)
+    } catch {
+      toast.error(t('quiz.createFailed'))
+    }
+  }
+
+  async function retry() {
+    setRetrying(true)
+    try {
+      await quizzesApi.retry(quizId)
+      attemptStarts.delete(quizId)
+      sessionStorage.removeItem(attemptKey(quizId))
+      setAttemptId(null)
+      setVerdict(null)
+      setExplanation(null)
+      setShowScore(false)
+      await queryClient.invalidateQueries({ queryKey: ['quizzes', quizId] })
+    } catch {
+      toast.error(t('quiz.retryFailed'))
+    } finally {
+      setRetrying(false)
+    }
   }
 
   if (!play) {
     return <p className="text-sm text-muted-foreground">{t('quiz.waiting')}</p>
   }
 
-  if (play.status === 'new' || play.status === 'running') {
+  if (quizIsFailed(play.status)) {
+    const detail = quizErrorDetail(t, play.error_message)
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span>{t('quiz.generating')}</span>
-        <span>{t('quiz.waiting')}</span>
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-destructive">{t('quiz.failed')}</p>
+        {detail && <p className="text-sm text-muted-foreground">{detail}</p>}
+        <Button onClick={retry} disabled={retrying}>
+          {t('quiz.retry')}
+        </Button>
+        <Button variant="outline" onClick={onRestart}>
+          {t('quiz.start')}
+        </Button>
       </div>
     )
   }
 
   if (!ready) {
     return (
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-destructive">{t('quiz.failed')}</p>
-        {play.error_message && (
-          <p className="text-sm text-muted-foreground">{play.error_message}</p>
-        )}
-        <Button variant="outline" onClick={onRestart}>
-          {t('quiz.start')}
-        </Button>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>{t('quiz.generating')}</span>
+        <span>{t('quiz.waiting')}</span>
       </div>
     )
   }

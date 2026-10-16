@@ -84,6 +84,41 @@ export function isQuizReady(play: QuizPlay): play is QuizReady {
   return play.status === 'completed' && 'cards' in play
 }
 
+const QUIZ_POLL_MS = 2000
+
+const QUIZ_ERROR_KEYS: Record<string, string> = {
+  invalid_output: 'quiz.errorInvalidOutput',
+  empty_source: 'quiz.errorEmptySource',
+  timeout: 'quiz.errorTimeout',
+  not_configured: 'quiz.errorNotConfigured',
+  too_large: 'quiz.errorTooLarge',
+}
+
+export function quizRefetchIntervalMs(status: string | undefined): number | false {
+  if (status === 'completed' || status === 'failed') {
+    return false
+  }
+  return QUIZ_POLL_MS
+}
+
+export function quizIsFailed(status: string | undefined): boolean {
+  return status === 'failed'
+}
+
+export function quizErrorDetail(
+  translate: (key: string) => string,
+  code: string | null | undefined
+): string | null {
+  if (!code || code === 'failed') {
+    return null
+  }
+  const key = QUIZ_ERROR_KEYS[code]
+  if (!key) {
+    return null
+  }
+  return translate(key)
+}
+
 export type Submission =
   | { type: 'mc'; option_id: string }
   | { type: 'multi'; option_ids: string[] }

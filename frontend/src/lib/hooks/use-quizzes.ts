@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { quizzesApi } from '@/lib/api/quizzes'
 import { QUERY_KEYS } from '@/lib/api/query-client'
+import { quizRefetchIntervalMs } from '@/lib/types/quiz'
 
 export function useNotebookQuizzes(notebookId: string) {
   return useQuery({
@@ -16,12 +17,6 @@ export function useQuiz(quizId: string | null, attemptId: string | null) {
     queryKey: QUERY_KEYS.quiz(quizId ?? '', attemptId),
     queryFn: () => quizzesApi.get(quizId as string, attemptId),
     enabled: Boolean(quizId),
-    refetchInterval: (query) => {
-      const status = query.state.data?.status
-      if (status === 'new' || status === 'running') {
-        return 2000
-      }
-      return false
-    },
+    refetchInterval: (query) => quizRefetchIntervalMs(query.state.data?.status),
   })
 }

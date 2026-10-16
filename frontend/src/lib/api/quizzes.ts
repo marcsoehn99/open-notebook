@@ -8,6 +8,10 @@ import {
   Verdict,
 } from '@/lib/types/quiz'
 
+export interface AttemptStarted {
+  attempt_id: string
+}
+
 export const quizzesApi = {
   list: async (notebookId: string) => {
     const response = await apiClient.get<QuizSummary[]>(`/notebooks/${notebookId}/quizzes`)
@@ -23,6 +27,16 @@ export const quizzesApi = {
     const response = await apiClient.get<QuizPlay>(`/quizzes/${quizId}`, {
       params: attemptId ? { attempt_id: attemptId } : undefined,
     })
+    return response.data
+  },
+
+  start: async (quizId: string) => {
+    const response = await apiClient.post<AttemptStarted>(`/quizzes/${quizId}/attempts/start`)
+    return response.data
+  },
+
+  retry: async (quizId: string) => {
+    const response = await apiClient.post<QuizSummary>(`/quizzes/${quizId}/retry`)
     return response.data
   },
 

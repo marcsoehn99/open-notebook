@@ -1016,5 +1016,13 @@ export const trTR = {
     waiting: "Warten auf das Quiz",
     yourAnswer: "Deine Antwort",
     accepted: "Akzeptierte Antworten",
+    retry: "Erneut versuchen",
+    retryFailed: "Das Quiz konnte nicht erneut gestartet werden",
+    alreadyAnswered: "Diese Frage wurde in diesem Versuch schon beantwortet",
+    errorInvalidOutput: "Das Modell hat kein gültiges Quiz geliefert",
+    errorEmptySource: "Eine gewählte Quelle enthält keinen Text",
+    errorTimeout: "Die Quiz-Erzeugung hat zu lange gedauert",
+    errorNotConfigured: "Es ist kein Quiz-Modell konfiguriert",
+    errorTooLarge: "Der Quiz-Prompt ist zu lang",
   },
 } satisfies TranslationShape;
