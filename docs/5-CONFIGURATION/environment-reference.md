@@ -207,6 +207,14 @@ If an engine is selected in Settings but its runtime is missing, extraction fall
 
 ---
 
+## Quiz
+
+| Variable | Default | Read by | Description |
+|----------|---------|---------|-------------|
+| `OPEN_NOTEBOOK_QUIZ_MODEL` | `mistral-large-4` | API | Language-model name used to write a notebook quiz. At create time the API resolves the name to a language-model row. If no row has that name, the quiz is not started |
+
+---
+
 ## Logging and tracing
 
 | Variable | Default | Read by | Description |

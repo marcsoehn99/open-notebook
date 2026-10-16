@@ -11,6 +11,7 @@ import { useNotebook } from '@/lib/hooks/use-notebooks'
 import { useNotebookSources } from '@/lib/hooks/use-sources'
 import { useNotes } from '@/lib/hooks/use-notes'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { QuizDialog } from '@/components/notebooks/QuizDialog'
 import { useNotebookColumnsStore } from '@/lib/stores/notebook-columns-store'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -58,6 +59,7 @@ export default function NotebookPage() {
 
   // Mobile tab state (Sources, Notes, or Chat)
   const [mobileActiveTab, setMobileActiveTab] = useState<'sources' | 'notes' | 'chat'>('chat')
+  const [quizOpen, setQuizOpen] = useState(false)
 
   // Context selection state
   const [contextSelections, setContextSelections] = useState<ContextSelections>({
@@ -155,7 +157,14 @@ export default function NotebookPage() {
     <AppShell>
       <div className="flex flex-col flex-1 min-h-0">
         <div className="flex-shrink-0 p-6 pb-0">
-          <NotebookHeader notebook={notebook} />
+          <NotebookHeader notebook={notebook} onQuizMe={() => setQuizOpen(true)} />
+          <QuizDialog
+            notebook={notebook}
+            sources={sources ?? []}
+            notes={notes ?? []}
+            open={quizOpen}
+            onOpenChange={setQuizOpen}
+          />
         </div>
 
         <div className="flex-1 p-6 pt-6 overflow-x-auto flex flex-col">

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Notebook quiz.** A notebook can start Quiz me from its header. The quiz is written in the background from the selected sources (notes are not sent). The player asks one question at a time, scores the answer on the server, and explains it with a quote from the source. `OPEN_NOTEBOOK_QUIZ_MODEL` names the language model (default `mistral-large-4`).
 - **Optional Langfuse tracing.** Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to send language-model calls (prompt, token counts, latency, and the cost Langfuse computes from those tokens) to Langfuse. The default host is `https://cloud.langfuse.com` (EU cloud). `LANGFUSE_BASE_URL` is accepted when `LANGFUSE_HOST` is unset. With either key unset, tracing stays off and Open Notebook does not contact Langfuse. See [Environment Reference](docs/5-CONFIGURATION/environment-reference.md#logging-and-tracing).
 
 ### Changed
