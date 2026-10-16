@@ -439,3 +439,33 @@ def test_router_does_not_name_sealed_or_generated_types():
 def test_prompt_template_reads_question_types():
     text = (ROOT / "prompts/quiz/generate.jinja").read_text()
     assert "QUESTION_TYPES" in text
+
+
+@pytest.mark.asyncio
+async def test_generate_node_rejects_invalid_json(monkeypatch):
+    from open_notebook.graphs.quiz import generate_node
+
+    class _Message:
+        content = "not-json"
+
+    class _Model:
+        async def ainvoke(self, prompt: str) -> _Message:
+            return _Message()
+
+    async def _provision(*args: object, **kwargs: object) -> _Model:
+        return _Model()
+
+    monkeypatch.setattr(
+        "open_notebook.graphs.quiz.provision_langchain_model",
+        _provision,
+    )
+    with pytest.raises(ValueError):
+        await generate_node(
+            {
+                "quiz_id": "quiz:1",
+                "model_id": "model:1",
+                "slices": {SOURCE: SLICE},
+                "settings": _settings(),
+            },
+            {},
+        )

@@ -12,6 +12,7 @@ from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.domain.quiz import (
     QUIZ_PROMPT_TOKEN_LIMIT,
     GeneratedDeck,
+    GeneratedQuestion,
     QuizSettings,
     SealedQuestion,
     bloom_for,

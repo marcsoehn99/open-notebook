@@ -357,6 +357,7 @@ function QuizPlayer({
   const [verdict, setVerdict] = useState<Verdict | null>(null)
   const [explanation, setExplanation] = useState<Explanation | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [showScore, setShowScore] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
   const [sourceId, setSourceId] = useState<string | null>(null)
   const playQuery = useQuiz(quizId, attemptId)
@@ -425,6 +426,7 @@ function QuizPlayer({
     setIndex(0)
     setVerdict(null)
     setExplanation(null)
+    setShowScore(false)
   }
 
   if (!play) {
@@ -455,12 +457,16 @@ function QuizPlayer({
     )
   }
 
-  const score =
+  const finishedScore =
     verdict?.progress.kind === 'finished'
       ? verdict.progress.score
       : ready.progress.kind === 'finished'
         ? ready.progress.score
         : null
+  const onAnsweredCard = Boolean(
+    verdict && prompt && verdict.question_id === prompt.question_id
+  )
+  const score = showScore || !onAnsweredCard ? finishedScore : null
 
   if (score) {
     const explainId =
@@ -558,6 +564,9 @@ function QuizPlayer({
         )}
         {shown && index < total - 1 && (
           <Button onClick={() => setIndex((value) => value + 1)}>{t('quiz.next')}</Button>
+        )}
+        {shown && index === total - 1 && (
+          <Button onClick={() => setShowScore(true)}>{t('quiz.score')}</Button>
         )}
       </div>
       <SourceDialog open={sourceOpen} onOpenChange={setSourceOpen} sourceId={sourceId} />
