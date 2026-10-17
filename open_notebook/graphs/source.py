@@ -17,6 +17,7 @@ from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Asset, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.graphs.transformation import graph as transform_graph
+from open_notebook.utils.mistral_ocr import ocr_file
 from open_notebook.utils.runtime_capabilities import engine_runtime_missing
 
 # content-core >= 2.1 disables its own Loguru logging for library consumers.
@@ -241,6 +242,14 @@ async def content_process(state: SourceState) -> dict:
     except cc.ContentCoreError as e:
         logger.warning(f"content-core extraction failed ({type(e).__name__}): {e}")
         raise _extraction_error(e, url) from e
+
+    # A scan has no text layer, so content-core returns empty content for it.
+    # Try Mistral OCR (when a Mistral credential exists) before giving up.
+    file_path = content_state.get("file_path")
+    if file_path and (not processed.content or not processed.content.strip()):
+        ocr_text = await ocr_file(file_path)
+        if ocr_text:
+            processed = processed.model_copy(update={"content": ocr_text})
 
     # Since content-core 2.2, empty content means the source was genuinely
     # empty; extraction failures raise (handled above).

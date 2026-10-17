@@ -1,0 +1,8 @@
+REMOVE EVENT IF EXISTS quiz_delete ON TABLE quiz;
+DEFINE EVENT IF NOT EXISTS quiz_delete ON TABLE quiz WHEN ($after == NONE) THEN {
+    delete quiz_question where quiz == $before.id;
+    delete quiz_attempt where quiz == $before.id;
+};
+REMOVE TABLE IF EXISTS quiz_answer;
+REMOVE FIELD IF EXISTS status ON TABLE quiz;
+REMOVE FIELD IF EXISTS error_message ON TABLE quiz;

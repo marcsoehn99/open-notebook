@@ -93,7 +93,7 @@ function StatusBadge({ status }: { status?: EpisodeStatus | null }) {
   return (
     <Badge
       variant="outline"
-      className={cn('uppercase tracking-wide text-xs', meta.className)}
+      className={cn('text-xs', meta.className)}
     >
       {meta.label}
     </Badge>

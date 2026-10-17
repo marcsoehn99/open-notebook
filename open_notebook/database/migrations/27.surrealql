@@ -1,0 +1,18 @@
+DEFINE FIELD IF NOT EXISTS status ON TABLE quiz TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS error_message ON TABLE quiz TYPE option<string>;
+
+DEFINE TABLE IF NOT EXISTS quiz_answer SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS quiz ON TABLE quiz_answer TYPE record<quiz>;
+DEFINE FIELD IF NOT EXISTS attempt ON TABLE quiz_answer TYPE record<quiz_attempt>;
+DEFINE FIELD IF NOT EXISTS question_id ON TABLE quiz_answer TYPE string;
+DEFINE FIELD IF NOT EXISTS submission ON TABLE quiz_answer FLEXIBLE TYPE object;
+DEFINE FIELD IF NOT EXISTS created ON TABLE quiz_answer DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE quiz_answer DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_quiz_answer_once ON TABLE quiz_answer COLUMNS attempt, question_id UNIQUE CONCURRENTLY;
+
+REMOVE EVENT IF EXISTS quiz_delete ON TABLE quiz;
+DEFINE EVENT IF NOT EXISTS quiz_delete ON TABLE quiz WHEN ($after == NONE) THEN {
+    delete quiz_question where quiz == $before.id;
+    delete quiz_answer where quiz == $before.id;
+    delete quiz_attempt where quiz == $before.id;
+};

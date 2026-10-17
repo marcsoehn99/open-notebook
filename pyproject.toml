@@ -34,6 +34,9 @@ dependencies = [
     "langchain-google-genai>=4.1.2,<5",
     "langchain-groq>=1.1.1,<2",
     "langchain-mistralai>=1.1.1,<2",
+    # Optional tracing. Imported only when both Langfuse keys are set.
+    # v4.7+ writes directly to Langfuse v4 ingestion (older SDKs are delayed ~15 min).
+    "langfuse>=4.7,<5",
     "tomli>=2.0.2",
     "python-dotenv>=1.2.2",
     "httpx[socks]>=0.27.0",
