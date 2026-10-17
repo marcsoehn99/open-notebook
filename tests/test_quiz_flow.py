@@ -1,6 +1,7 @@
 """Quiz jobs, attempts, and answer writes. No database and no model network."""
 
 import asyncio
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -186,7 +187,9 @@ def test_failure_codes_hide_model_text():
         quiz_failure_code(QuizModelOutputError("quote is not a verbatim slice"))
         == "invalid_output"
     )
-    assert quiz_failure_code(QuizSourceEmptyError("source has no text")) == "empty_source"
+    assert (
+        quiz_failure_code(QuizSourceEmptyError("source has no text")) == "empty_source"
+    )
     assert (
         quiz_failure_code(QuizPromptTooLargeError("quiz prompt has 9 tokens"))
         == "too_large"
@@ -268,7 +271,7 @@ async def test_parallel_answers_both_stick_and_a_repeat_is_409(monkeypatch):
         commit_answer("quiz:1", token, "q1", _mc("opt-b")),
         return_exceptions=True,
     )
-    saved = [item for item in raced if not isinstance(item, Exception)]
+    saved = [item for item in raced if not isinstance(item, BaseException)]
     rejected = [item for item in raced if isinstance(item, ConflictError)]
     assert len(saved) == 1
     assert len(rejected) == 1
@@ -281,7 +284,7 @@ async def test_parallel_answers_both_stick_and_a_repeat_is_409(monkeypatch):
         return_exceptions=True,
     )
     assert any(isinstance(item, ConflictError) for item in follow)
-    stored = [item for item in follow if not isinstance(item, Exception)]
+    stored = [item for item in follow if not isinstance(item, BaseException)]
     assert len(stored) == 1
     assert stored[0].question_id == "q2"
     assert len(world.answers) == 2
@@ -431,7 +434,9 @@ def test_router_attempt_codes(api):
     )
     assert again.status_code == 409
     assert "correct_option_id" not in again.text
-    assert world.answers[(_tail(world.attempts[token].id), "q1")]["option_id"] == "opt-a"
+    assert (
+        world.answers[(_tail(world.attempts[token].id), "q1")]["option_id"] == "opt-a"
+    )
 
     early = client.post(
         "/api/quizzes/quiz:1/questions/q2/explain",
@@ -506,10 +511,11 @@ async def test_generate_command_success_and_failures(monkeypatch):
         generate_quiz_command,
     )
 
+    stop_on = cast(list[type], QUIZ_GENERATION_RETRY["stop_on"])
     assert QUIZ_GENERATION_RETRY["max_attempts"] == 1
-    assert NetworkError not in QUIZ_GENERATION_RETRY["stop_on"]
-    assert InvalidInputError in QUIZ_GENERATION_RETRY["stop_on"]
-    assert QuizModelOutputError in QUIZ_GENERATION_RETRY["stop_on"]
+    assert NetworkError not in stop_on
+    assert InvalidInputError in stop_on
+    assert QuizModelOutputError in stop_on
 
     quiz = _command_quiz()
     calls, replaced = _patch_command(

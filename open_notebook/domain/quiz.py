@@ -429,7 +429,9 @@ def validate_deck(
         if question.source_id not in slices:
             raise QuizModelOutputError("question cites a source that was not sent")
         if not quote_is_verbatim(question.quote, slices[question.source_id]):
-            raise QuizModelOutputError("quote is not a verbatim slice of the source text")
+            raise QuizModelOutputError(
+                "quote is not a verbatim slice of the source text"
+            )
         if not question.explanation.strip():
             raise QuizModelOutputError("explanation is empty")
         _validate_generated_key(question)
@@ -463,7 +465,9 @@ def _require_choice_indexes(question: GeneratedQuestion, *, exact: int | None) -
         raise QuizModelOutputError("correct index is out of range")
     if exact is not None:
         if len(indexes) != exact:
-            raise QuizModelOutputError("multiple choice needs exactly one correct index")
+            raise QuizModelOutputError(
+                "multiple choice needs exactly one correct index"
+            )
         return
     if not indexes or len(indexes) >= option_count:
         raise QuizModelOutputError("multi-select needs a non-empty proper subset")
@@ -663,9 +667,7 @@ def progress_for(
     aligned = align_answers(questions, answers)
     if questions and len(aligned) == len(questions):
         return Finished(kind="finished", score=score_attempt(questions, answers))
-    return InProgress(
-        kind="in_progress", answered=len(aligned), total=len(questions)
-    )
+    return InProgress(kind="in_progress", answered=len(aligned), total=len(questions))
 
 
 def template_data(
@@ -1329,9 +1331,7 @@ async def explain_committed(
         raise NotFoundError("attempt not found")
     answers = await _answers_for(attempt)
     if not any(answer.question_id == question_id for answer in answers):
-        raise InvalidInputError(
-            "answer this question before asking for an explanation"
-        )
+        raise InvalidInputError("answer this question before asking for an explanation")
     return Explanation(
         explanation=question.explanation,
         quote=question.quote,

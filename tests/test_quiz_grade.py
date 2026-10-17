@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args
 
 import pytest
 from pydantic import ValidationError
@@ -160,7 +160,7 @@ def _cloze() -> SealedCloze:
     )
 
 
-def _sealed_literal(cls: type) -> str:
+def _sealed_literal(cls: Any) -> str:
     annotation = cls.model_fields["type"].annotation
     args = get_args(annotation)
     if args and isinstance(args[0], str):
@@ -283,8 +283,7 @@ def test_grade_one_scores_each_question_type():
         is True
     )
     assert (
-        grade_one(multi, MultiSubmission(type="multi", option_ids=("opt-a",)))
-        is False
+        grade_one(multi, MultiSubmission(type="multi", option_ids=("opt-a",))) is False
     )
     assert (
         grade_one(

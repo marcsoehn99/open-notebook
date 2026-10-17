@@ -29,9 +29,7 @@ def _value(env: Mapping[str, str], name: str) -> str:
 
 def parse_langfuse_settings(env: Mapping[str, str]) -> LangfuseSettings | None:
     """Return settings when both keys are present. Otherwise tracing is off."""
-    if not _value(env, "LANGFUSE_PUBLIC_KEY") or not _value(
-        env, "LANGFUSE_SECRET_KEY"
-    ):
+    if not _value(env, "LANGFUSE_PUBLIC_KEY") or not _value(env, "LANGFUSE_SECRET_KEY"):
         return None
     host = (
         _value(env, "LANGFUSE_HOST")

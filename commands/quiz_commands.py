@@ -124,6 +124,4 @@ async def generate_quiz_command(
         except Exception:
             logger.exception(f"could not store failure for quiz {quiz.id}")
         raise
-    return GenerateQuizOutput(
-        success=True, quiz_id=str(quiz.id), error_message=""
-    )
+    return GenerateQuizOutput(success=True, quiz_id=str(quiz.id), error_message="")
