@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Development:** `architecture.md`, `testing.md`, `api-reference.md` and `code-standards.md` are rewritten from the code. A new playbook covers adding an AI provider. Dev setup lives on one page. The AGENTS files agree with the docs. Contributor conventions (Conventional Commits, CHANGELOG sections, pre-PR checks that match CI) are documented
 
 ### Fixed
+- **Quiz answers and explanations load again.** SurrealDB 2.7 rejects a query that sets `$token`, so every answer and every explanation returned HTTP 500. The attempt lookup now binds `$attempt_token`.
 - **Quiz polling waits until generation finishes.** The player keeps asking while a quiz is new, queued, running, or unknown, and it stops only when the quiz is completed or failed. A job that is still in progress is shown as generating.
 - **Quiz attempts come from the server.** The player starts an attempt with the API. Answering with an id the server did not create does not reveal the solution, and a second answer for the same question is rejected. Each answer is stored on its own row, so two answers sent at the same time both stay saved.
 - **Quiz generation stops after 6 minutes.** The job runs once. Timeout and other failures store `failed` on the quiz with a short error code. The player shows a translated message and **Erneut versuchen**, which submits the job again.

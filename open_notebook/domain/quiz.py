@@ -1101,8 +1101,8 @@ async def _load_deck(quiz_id: str) -> tuple[SealedQuestion, ...]:
 
 async def _find_attempt(quiz_id: str, token: str) -> QuizAttempt | None:
     rows = await repo_query(
-        "SELECT * FROM quiz_attempt WHERE quiz = $quiz AND token = $token LIMIT 1",
-        {"quiz": ensure_record_id(quiz_id), "token": token},
+        "SELECT * FROM quiz_attempt WHERE quiz = $quiz AND token = $attempt_token LIMIT 1",
+        {"quiz": ensure_record_id(quiz_id), "attempt_token": token},
     )
     if not rows:
         return None

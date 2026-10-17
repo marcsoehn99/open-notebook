@@ -119,7 +119,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, world: World) -> None:
         if "quiz_question" in query:
             return list(world.questions)
         if "quiz_attempt" in query:
-            token = params.get("token")
+            token = params.get("attempt_token")
             attempt = world.attempts.get(str(token))
             if attempt is None:
                 return []
