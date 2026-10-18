@@ -217,7 +217,31 @@ If an engine is selected in Settings but its runtime is missing, extraction fall
 
 When these variables are unset, Open Notebook sends no `reasoning_effort` field. That is the default for every language-model task. The variables do not apply to embeddings, OCR, speech to text, or text to speech.
 
-Mistral documents `none` and `high` at [Reasoning](https://docs.mistral.ai/studio/conversations/reasoning). Open Notebook sends the field only for a Mistral model named `mistral-small-latest`, or whose name starts with `mistral-large-4` or `mistral-medium-3-5`. `none`, `minimal`, and `low` are sent as `none`. `medium` and `high` are sent as `high`. `off` and `provider_default` send nothing. Any other value logs a warning and falls back to that default. The installed libraries do not say whether the API accepts `low`.
+A value that cuts reasoning is allowed only after spec criterion 6 and spec criterion 7 are both met. Criterion 6 is that every quiz quote is verbatim. Criterion 7 is that the evaluation is at least as good as Medium. Until then, leave the variables unset. The decision and the spec mapping are in [ADR-015](../7-DEVELOPMENT/decisions/ADR-015-optional-reasoning-and-partial-quiz-repair.md).
+
+Mistral documents `reasoning_effort` for `mistral-small-latest`, `mistral-medium-3-5`, and `mistral-large-4-0` at [Reasoning](https://docs.mistral.ai/studio/conversations/reasoning). Open Notebook sends the field only for a Mistral model named `mistral-small-latest`, or whose name starts with `mistral-large-4` or `mistral-medium-3-5`.
+
+| Value you set | Field sent | Effect |
+| --- | --- | --- |
+| `none`, `minimal`, `low` | `none` | No thinking. This is the strongest cut. |
+| `medium` | `high` | No cut. |
+| `high` | `high` | No cut. |
+| `off`, `provider_default`, or unset | nothing | API default. For `mistral-large-4` that default is reasoning on. |
+| anything else | nothing | A warning is logged. |
+
+Measured 2026-10-18, `reasoning_effort="low"` on model `mistral-large-4` returned HTTP 400. The body was `reasoning_effort low is not supported for this model, supported values: [high, none]` (code 3051). The mapping therefore sends only `none` or `high`.
+
+The same day, a short source (170 words) and a 3-question quiz measured as follows. Default and `high` behave alike.
+
+| Setting | Time | Output tokens | Thinking | Verbatim quotes |
+| --- | --- | --- | --- | --- |
+| default (no field) | 50 s | 5169 | about 92 percent | 3/3 |
+| `none` | 22 s | 708 | 0 percent | 3/3 |
+| `high` | 43 s | 4819 | about 91 percent | 3/3 |
+
+A forced partial repair of one tampered quote, with `none`, took 2 calls and 10 s, and the deck was 3/3 verbatim after the repair.
+
+Each variable below is unset by default. A task variable overrides `OPEN_NOTEBOOK_REASONING_DEFAULT` for that task.
 
 | Variable | Default | Read by | Description |
 |----------|---------|---------|-------------|
@@ -246,7 +270,7 @@ Mistral documents `none` and `high` at [Reasoning](https://docs.mistral.ai/studi
 
 Tracing sends prompts and source content to LangSmith. Setup: https://smith.langchain.com/
 
-Langfuse tracing is off when either key is unset. Open Notebook does not import the Langfuse client on that path and does not contact Langfuse. When both keys are set, each language-model call provisioned for a graph records the prompt, token counts and latency. Langfuse computes cost from the token counts. The same variables must be visible to the API and the worker (`make api` and `make worker-start` load them from `.env`). A later evaluation set, not built yet, is described in [Langfuse evaluation datasets](../7-DEVELOPMENT/langfuse-evaluation-datasets.md).
+Langfuse tracing is off when either key is unset. Open Notebook does not import the Langfuse client on that path and does not contact Langfuse. When both keys are set, each language-model call provisioned for a graph records the prompt, token counts and latency. Thinking and reasoning parts, including `<think>` blocks, are removed before that payload is stored. Langfuse computes cost from the token counts. The same variables must be visible to the API and the worker (`make api` and `make worker-start` load them from `.env`). A later evaluation set, not built yet, is described in [Langfuse evaluation datasets](../7-DEVELOPMENT/langfuse-evaluation-datasets.md).
 
 SurrealDB's own log level is the `--log` argument in the `surrealdb` service's `command:` (`info` in the shipped compose file).
 
