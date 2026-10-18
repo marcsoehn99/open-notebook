@@ -42,7 +42,9 @@ def remove_non_printable(text: str) -> str:
     return re.sub(r"[^\w\s.,!?\-\n\t]", "", text, flags=re.UNICODE)
 
 
-def parse_thinking_content(content: str) -> Tuple[str, str]:
+def parse_thinking_content(
+    content: str, *, size_limit: int | None = 100_000
+) -> Tuple[str, str]:
     """
     Parse message content to extract thinking content from <think> tags.
 
@@ -69,8 +71,9 @@ def parse_thinking_content(content: str) -> Tuple[str, str]:
     if not isinstance(content, str):
         return "", str(content) if content is not None else ""
 
-    # Limit processing for very large content (100KB limit)
-    if len(content) > 100000:
+    # The default cap keeps ordinary parsing cheap. A trace mask passes
+    # size_limit=None so a long thinking block is still removed.
+    if size_limit is not None and len(content) > size_limit:
         return "", content
 
     # Find all well-formed thinking blocks
@@ -106,7 +109,7 @@ def parse_thinking_content(content: str) -> Tuple[str, str]:
     return "", content
 
 
-def clean_thinking_content(content: str) -> str:
+def clean_thinking_content(content: str, *, size_limit: int | None = 100_000) -> str:
     """
     Remove thinking content from AI responses, returning only the cleaned content.
 
@@ -124,7 +127,7 @@ def clean_thinking_content(content: str) -> str:
         >>> clean_thinking_content(content)
         "Here's the answer"
     """
-    _, cleaned_content = parse_thinking_content(content)
+    _, cleaned_content = parse_thinking_content(content, size_limit=size_limit)
     return cleaned_content
 
 

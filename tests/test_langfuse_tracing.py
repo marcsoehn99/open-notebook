@@ -1,6 +1,7 @@
 """Langfuse tracing stays off unless both API keys are set."""
 
 import builtins
+import json
 import os
 import sys
 import types
@@ -12,6 +13,7 @@ import pytest
 from open_notebook.ai.langfuse_tracing import (
     DEFAULT_LANGFUSE_HOST,
     langfuse_callbacks,
+    mask_langfuse_payload,
     parse_langfuse_settings,
     with_langfuse_callbacks,
 )
@@ -133,8 +135,15 @@ def test_configured_call_attaches_handler_on_the_langchain_model(
         pass
 
     handler = Sentinel()
+    constructed: dict[str, object] = {}
+
+    class _Langfuse:
+        def __init__(self, **kwargs: object) -> None:
+            constructed.update(kwargs)
+
     package = types.ModuleType("langfuse")
     package.__path__ = []  # type: ignore[attr-defined]
+    package.Langfuse = _Langfuse  # type: ignore[attr-defined]
     langchain_mod = types.ModuleType("langfuse.langchain")
     langchain_mod.CallbackHandler = lambda: handler  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "langfuse", package)
@@ -149,6 +158,38 @@ def test_configured_call_attaches_handler_on_the_langchain_model(
     assert traced.callbacks == [handler]
     assert not model.callbacks
     assert os.environ["LANGFUSE_HOST"] == DEFAULT_LANGFUSE_HOST
+    assert constructed["mask"] is mask_langfuse_payload
+    assert constructed["host"] == DEFAULT_LANGFUSE_HOST
+
+
+def test_mask_drops_thinking_from_the_payload_langfuse_sends() -> None:
+    secret = "SECRET-REASONING-9f3a"
+    nested = "NESTED-THINKING-TEXT"
+    reasoning = "ALSO-SECRET-REASONING"
+    tagged = "TAGGED-THINKING-BLOCK"
+    payload = {
+        "role": "assistant",
+        "content": [
+            {
+                "type": "thinking",
+                "thinking": [{"type": "text", "text": nested}],
+                "text": secret,
+            },
+            {"type": "reasoning", "reasoning": reasoning, "text": reasoning},
+            {"type": "text", "text": f"<think>{tagged}</think>The visible answer"},
+        ],
+        "additional_kwargs": {},
+    }
+
+    sent = mask_langfuse_payload(data=payload)
+    encoded = json.dumps(sent)
+
+    assert secret not in encoded
+    assert nested not in encoded
+    assert reasoning not in encoded
+    assert tagged not in encoded
+    assert "The visible answer" in encoded
+    assert sent["content"][0]["type"] == "text"
 
 
 def test_host_wins_over_base_url() -> None:
