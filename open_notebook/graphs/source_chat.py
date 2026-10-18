@@ -11,6 +11,7 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.reasoning import ReasoningTask
 from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Source, SourceInsight
 from open_notebook.exceptions import IncompleteGenerationError, OpenNotebookError
@@ -161,6 +162,7 @@ def _call_model_with_source_context_inner(
                     config.get("configurable", {}).get("model_id")
                     or state.get("model_override"),
                     "chat",
+                    task=ReasoningTask.SOURCE_CHAT,
                     max_tokens=8192,
                 )
             )
@@ -185,6 +187,7 @@ def _call_model_with_source_context_inner(
                 config.get("configurable", {}).get("model_id")
                 or state.get("model_override"),
                 "chat",
+                task=ReasoningTask.SOURCE_CHAT,
                 max_tokens=8192,
             )
         )

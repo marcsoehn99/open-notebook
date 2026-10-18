@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.reasoning import ReasoningTask
 from open_notebook.utils.text_utils import clean_thinking_content, extract_text_content
 
 
@@ -31,6 +32,7 @@ async def call_model(state: dict, config: RunnableConfig) -> dict:
         str(payload),
         config.get("configurable", {}).get("model_id"),
         "transformation",
+        task=ReasoningTask.SHORT,
         max_tokens=5000,
     )
 

@@ -4,12 +4,18 @@ from loguru import logger
 
 from open_notebook.ai.langfuse_tracing import with_langfuse_callbacks
 from open_notebook.ai.models import model_manager
+from open_notebook.ai.reasoning import ReasoningTask, apply_reasoning_effort
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils import token_count
 
 
 async def provision_langchain_model(
-    content, model_id, default_type, **kwargs
+    content,
+    model_id,
+    default_type,
+    *,
+    task: ReasoningTask | None = None,
+    **kwargs,
 ) -> BaseChatModel:
     """
     Returns the best model to use based on the context size and on whether there is a specific model being requested in Config.
@@ -59,4 +65,14 @@ async def provision_langchain_model(
             f"Please check that the model configured for '{default_type}' is a language model, not an embedding or speech model."
         )
 
-    return with_langfuse_callbacks(model.to_langchain())
+    langchain_model = model.to_langchain()
+    if task is not None:
+        model_kwargs = getattr(langchain_model, "model_kwargs", None)
+        if isinstance(model_kwargs, dict):
+            apply_reasoning_effort(
+                model_kwargs,
+                task,
+                provider=model.provider,
+                model_name=model.get_model_name() or "",
+            )
+    return with_langfuse_callbacks(langchain_model)

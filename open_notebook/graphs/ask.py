@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.reasoning import ReasoningTask
 from open_notebook.domain.notebook import vector_search
 from open_notebook.exceptions import (
     ExternalServiceError,
@@ -74,6 +75,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
             system_prompt,
             config.get("configurable", {}).get("strategy_model"),
             "tools",
+            task=ReasoningTask.ASK,
             max_tokens=ASK_MAX_TOKENS,
             structured=dict(type="json"),
         )
@@ -150,6 +152,7 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
             system_prompt,
             config.get("configurable", {}).get("answer_model"),
             "tools",
+            task=ReasoningTask.ASK,
             max_tokens=ASK_MAX_TOKENS,
         )
         ai_message = await model.ainvoke(system_prompt)
@@ -173,6 +176,7 @@ async def write_final_answer(state: ThreadState, config: RunnableConfig) -> dict
             system_prompt,
             config.get("configurable", {}).get("final_answer_model"),
             "tools",
+            task=ReasoningTask.ASK,
             max_tokens=ASK_MAX_TOKENS,
         )
         ai_message = await model.ainvoke(system_prompt)
