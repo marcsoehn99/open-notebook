@@ -29,6 +29,7 @@ from open_notebook.utils.context_builder import (
     _truncate_source_to_token_budget,
     build_source_context,
 )
+from open_notebook.utils.text_utils import extract_text_content
 
 # ============================================================================
 # TEST SUITE 1: Text Utilities
@@ -146,6 +147,22 @@ class TestTextUtilities:
         assert "<think>" not in result
         assert "Public response" in result
         assert "Internal thoughts" not in result
+
+    def test_extract_text_content_drops_thinking_parts(self):
+        content = [
+            {
+                "type": "thinking",
+                "thinking": [{"type": "text", "text": "hidden reasoning"}],
+            },
+            {"type": "thinking", "text": "also hidden"},
+            {"type": "reasoning", "text": "legacy hidden"},
+            {"type": "text", "text": "visible answer"},
+        ]
+        assert extract_text_content(content) == "visible answer"
+        assert "hidden" not in extract_text_content(content)
+
+    def test_extract_text_content_keeps_a_plain_string(self):
+        assert extract_text_content("visible answer") == "visible answer"
 
 
 # ============================================================================
