@@ -492,14 +492,10 @@ def kept_questions(
 ) -> tuple[GeneratedQuestion, ...]:
     """Questions that passed. A deck fault does not drop them."""
     failed = {
-        fault.question_index
-        for fault in faults
-        if isinstance(fault, QuestionFault)
+        fault.question_index for fault in faults if isinstance(fault, QuestionFault)
     }
     return tuple(
-        question
-        for index, question in enumerate(questions)
-        if index not in failed
+        question for index, question in enumerate(questions) if index not in failed
     )
 
 

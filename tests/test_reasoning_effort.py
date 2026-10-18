@@ -204,7 +204,7 @@ class _CopyChat:
 
     def model_copy(
         self, *, update: dict[str, object] | None = None, deep: bool = False
-    ) -> _CopyChat:
+    ) -> "_CopyChat":
         del deep
         copied = _CopyChat(dict(self.model_kwargs))
         copied.callbacks = list(self.callbacks) if self.callbacks else None

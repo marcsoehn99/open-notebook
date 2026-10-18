@@ -146,9 +146,7 @@ async def _full_rewrite(
     try:
         return load_generated_questions(await ask(rendered))
     except QuizModelOutputError as failure:
-        logger.warning(
-            f"quiz repair round {budget.rounds} was not applied: {failure}"
-        )
+        logger.warning(f"quiz repair round {budget.rounds} was not applied: {failure}")
         raise
 
 
@@ -183,9 +181,7 @@ async def _partial_round(
     try:
         repaired = load_generated_questions(await ask(rendered))
     except QuizModelOutputError as failure:
-        logger.warning(
-            f"quiz repair round {budget.rounds} was not applied: {failure}"
-        )
+        logger.warning(f"quiz repair round {budget.rounds} was not applied: {failure}")
         return questions
     if len(repaired) != expected:
         logger.warning(

@@ -301,8 +301,7 @@ async def test_repair_with_the_wrong_length_warns_and_uses_the_next_round(
         logger.remove(sink)
     assert len(prompts) == 3
     assert any(
-        "was not applied" in message and "expected 1" in message
-        for message in messages
+        "was not applied" in message and "expected 1" in message for message in messages
     )
     assert [card.stem for card in result["deck"]] == [
         "Name the city.",

@@ -212,7 +212,9 @@ def test_host_wins_over_base_url() -> None:
 
 def test_parse_trace_tags_trims_and_drops_empty_parts() -> None:
     assert parse_trace_tags({}) == ()
-    assert parse_trace_tags({"OPEN_NOTEBOOK_TRACE_TAGS": " alpha , , beta , alpha "}) == (
+    assert parse_trace_tags(
+        {"OPEN_NOTEBOOK_TRACE_TAGS": " alpha , , beta , alpha "}
+    ) == (
         "alpha",
         "beta",
     )
@@ -266,7 +268,7 @@ class _CopyChat:
 
     def model_copy(
         self, *, update: dict[str, object] | None = None, deep: bool = False
-    ) -> _CopyChat:
+    ) -> "_CopyChat":
         del deep
         copied = _CopyChat()
         if isinstance(self.model_kwargs, dict):
