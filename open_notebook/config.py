@@ -44,4 +44,18 @@ def ensure_llm_timeout_default(environ: MutableMapping[str, str] = os.environ) -
         environ["ESPERANTO_LLM_TIMEOUT"] = str(DEFAULT_LLM_TIMEOUT_SECONDS)
 
 
+def llm_timeout_seconds(environ: MutableMapping[str, str] = os.environ) -> float:
+    """Seconds one model call may take. Blank or invalid values use the default."""
+    raw = environ.get("ESPERANTO_LLM_TIMEOUT", "").strip()
+    if not raw:
+        return float(DEFAULT_LLM_TIMEOUT_SECONDS)
+    try:
+        value = float(raw)
+    except ValueError:
+        return float(DEFAULT_LLM_TIMEOUT_SECONDS)
+    if value <= 0:
+        return float(DEFAULT_LLM_TIMEOUT_SECONDS)
+    return value
+
+
 ensure_llm_timeout_default()

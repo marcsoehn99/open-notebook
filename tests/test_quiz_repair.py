@@ -107,7 +107,9 @@ async def test_repair_rewrites_only_the_failing_question(
     assert "exactly 1" in repair
     assert "Name the river." in repair
     assert "quote is not a verbatim slice of the source text" in repair
-    assert "Name the city." not in repair
+    assert "Do not repeat these stems" in repair
+    assert "Name the city." in repair
+    assert prompts[0] not in repair
     assert [card.stem for card in result["deck"]] == [
         "Name the city.",
         "Name the river.",
@@ -156,8 +158,8 @@ async def test_failing_repair_stops_after_two_rounds(
     assert len(model.prompts) == 3
     assert "exactly 1" in model.prompts[1]
     assert "exactly 1" in model.prompts[2]
-    assert "Name the city." not in model.prompts[1]
-    assert "Name the city." not in model.prompts[2]
+    assert "Do not repeat these stems" in model.prompts[1]
+    assert "Do not repeat these stems" in model.prompts[2]
 
 
 @pytest.mark.asyncio

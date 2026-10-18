@@ -1,0 +1,31 @@
+{% if mode == "full" %}
+The previous JSON failed validation: {{ error }}
+Return only the JSON object.
+{% elif mode == "unusable" %}
+No question could be kept. Rewrite the whole quiz.
+The previous reply failed: {{ error }}
+Return only the JSON object.
+{% else %}
+Write {{ expected_count }} questions to replace the failures below, or to fill the quiz when no failure is listed.
+Return a JSON object whose questions array has exactly {{ expected_count }} questions, in the listed order.
+Do not include questions that already passed.
+Return only the JSON object.
+{% endif %}
+{% if kept_stems %}
+Do not repeat these stems:
+{% for stem in kept_stems %}
+- {{ stem }}
+{% endfor %}
+{% endif %}
+{% if excerpts %}
+Source excerpts:
+{% for item in excerpts %}
+source_id: {{ item.source_id }}
+{{ item.text }}
+
+{% endfor %}
+{% endif %}
+{% for line in fault_lines %}
+{{ line }}
+{% endfor %}
+{{ format_instructions }}

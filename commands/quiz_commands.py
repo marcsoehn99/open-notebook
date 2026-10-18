@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from loguru import logger
 from surreal_commands import CommandInput, CommandOutput, command
@@ -80,6 +81,7 @@ async def _build_deck(quiz: Quiz):
             raise QuizSourceEmptyError("source has no text")
         texts[source_id] = full_text
     slices = truncate_slices(texts, QUIZ_SOURCE_TOKEN_BUDGET, token_count)
+    deadline = time.monotonic() + QUIZ_JOB_TIMEOUT_SECONDS
     try:
         result = await asyncio.wait_for(
             quiz_graph.ainvoke(
@@ -88,6 +90,7 @@ async def _build_deck(quiz: Quiz):
                     "model_id": str(quiz.model_id),
                     "slices": slices,
                     "settings": settings,
+                    "deadline": deadline,
                 }
             ),
             timeout=QUIZ_JOB_TIMEOUT_SECONDS,

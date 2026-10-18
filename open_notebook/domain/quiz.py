@@ -34,6 +34,8 @@ QUIZ_SOURCE_TOKEN_BUDGET = 80_000
 MIN_QUOTE_CHARS = 15
 MAX_QUESTIONS = 10
 QUIZ_REPAIR_ROUNDS = 2
+REPAIR_EXCERPT_WINDOW = 800
+REPAIR_EXCERPT_CAP = 4_000
 CLOZE_BLANK = "____"
 QUIZ_ERROR_INVALID_OUTPUT = "invalid_output"
 QUIZ_ERROR_EMPTY_SOURCE = "empty_source"
@@ -286,10 +288,19 @@ class GeneratedDeck(BaseModel):
 
 
 class QuestionFault(NamedTuple):
-    """One question the model must rewrite. question_index -1 means the deck itself."""
+    """One question that failed validation. question_index is its place in the reply."""
 
     question_index: int
     reason: str
+
+
+class DeckFault(NamedTuple):
+    """The reply length does not match the quiz. This fault has no question index."""
+
+    reason: str
+
+
+Fault = QuestionFault | DeckFault
 
 
 def configured_model_name() -> str:
@@ -452,11 +463,11 @@ def faults_for(
     num_questions: int,
     allowed_types: frozenset[QuestionType],
     slices: Mapping[str, str],
-) -> tuple[QuestionFault, ...]:
-    """Every failing question. A question_index of -1 means the deck cannot be aligned."""
+) -> tuple[Fault, ...]:
+    """Question faults, plus a deck fault when the reply has the wrong length."""
+    faults: list[Fault] = []
     if len(questions) != num_questions:
-        return (QuestionFault(-1, "question count does not match the quiz settings"),)
-    faults: list[QuestionFault] = []
+        faults.append(DeckFault("question count does not match the quiz settings"))
     for index, question in enumerate(questions):
         reason = question_fault(question, allowed_types=allowed_types, slices=slices)
         if reason is not None:
@@ -466,14 +477,30 @@ def faults_for(
 
 def nothing_kept(
     questions: Sequence[GeneratedQuestion],
-    faults: Sequence[QuestionFault],
+    faults: Sequence[Fault],
 ) -> bool:
     """True when no question can be saved and the next call must rewrite the deck."""
-    if not faults:
-        return False
-    if any(fault.question_index < 0 for fault in faults):
+    if not questions:
         return True
-    return len(faults) == len(questions)
+    failed = [fault for fault in faults if isinstance(fault, QuestionFault)]
+    return len(failed) == len(questions)
+
+
+def kept_questions(
+    questions: Sequence[GeneratedQuestion],
+    faults: Sequence[Fault],
+) -> tuple[GeneratedQuestion, ...]:
+    """Questions that passed. A deck fault does not drop them."""
+    failed = {
+        fault.question_index
+        for fault in faults
+        if isinstance(fault, QuestionFault)
+    }
+    return tuple(
+        question
+        for index, question in enumerate(questions)
+        if index not in failed
+    )
 
 
 def validate_deck(
@@ -519,58 +546,102 @@ def merge_repaired(
     return tuple(merged)
 
 
-def full_repair_prompt(original: str, error: str) -> str:
-    return (
-        f"{original}\n\nThe previous JSON failed validation: {error}\n"
-        "Return only the JSON object."
-    )
+def repeats_kept_stem(
+    replacements: Sequence[GeneratedQuestion],
+    kept: Sequence[GeneratedQuestion],
+) -> bool:
+    """True when a replacement repeats a kept stem, or two replacements share one."""
+    seen = {normalize_text(question.stem) for question in kept}
+    for question in replacements:
+        stem = normalize_text(question.stem)
+        if stem in seen:
+            return True
+        seen.add(stem)
+    return False
 
 
-def unusable_repair_prompt(
-    original: str,
+def _fault_lines(
     questions: Sequence[GeneratedQuestion],
-    faults: Sequence[QuestionFault],
-) -> str:
-    """Full rewrite used only when no question from the last reply can be kept."""
-    reason = faults[0].reason if faults else "quiz JSON did not match the schema"
-    lines = [
-        full_repair_prompt(original, reason).rstrip(),
-        "",
-        "No question could be kept. Rewrite the whole quiz.",
-    ]
-    indexed = [fault for fault in faults if 0 <= fault.question_index < len(questions)]
-    if indexed:
-        for fault in indexed:
-            lines.append(f"Index {fault.question_index} failed: {fault.reason}")
-            lines.append(questions[fault.question_index].model_dump_json())
-    else:
-        for index, question in enumerate(questions):
-            lines.append(f"Index {index} could not be kept.")
-            lines.append(question.model_dump_json())
-    return "\n".join(lines).rstrip() + "\n"
+    faults: Sequence[Fault],
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    for fault in faults:
+        if not isinstance(fault, QuestionFault):
+            continue
+        index = fault.question_index
+        if index < 0 or index >= len(questions):
+            continue
+        lines.append(f"Index {index} failed: {fault.reason}")
+        lines.append(questions[index].model_dump_json())
+    return tuple(lines)
 
 
-def partial_repair_prompt(
-    original: str,
+def _excerpt_window(text: str, needle: str) -> str | None:
+    if not needle:
+        return None
+    index = text.find(needle)
+    if index < 0:
+        return None
+    start = max(0, index - REPAIR_EXCERPT_WINDOW)
+    end = min(len(text), index + len(needle) + REPAIR_EXCERPT_WINDOW)
+    return text[start:end]
+
+
+def source_excerpts(
+    slices: Mapping[str, str],
     questions: Sequence[GeneratedQuestion],
-    faults: Sequence[QuestionFault],
-) -> str:
-    indexed = [fault for fault in faults if fault.question_index >= 0]
-    lines = [
-        original,
-        "",
-        "Rewrite only the failing questions below. "
-        f"Return a JSON object whose questions array has exactly {len(indexed)} "
-        "questions, in the listed order. "
-        "Do not include questions that already passed.",
-        "Return only the JSON object.",
-        "",
+) -> tuple[dict[str, str], ...]:
+    """Short source windows for a repair prompt. A missing quote uses a prefix."""
+    if not questions:
+        return tuple(
+            {"source_id": source_id, "text": text[:REPAIR_EXCERPT_CAP]}
+            for source_id, text in slices.items()
+            if text
+        )
+    by_source: dict[str, list[str]] = {}
+    for question in questions:
+        text = slices.get(question.source_id, "")
+        window = _excerpt_window(text, question.quote) or _excerpt_window(
+            text, question.stem[:80]
+        )
+        if window is None:
+            window = text[:REPAIR_EXCERPT_CAP]
+        by_source.setdefault(question.source_id, []).append(window)
+    excerpts: list[dict[str, str]] = []
+    for source_id, windows in by_source.items():
+        joined = "\n...\n".join(dict.fromkeys(windows))
+        clipped = joined[:REPAIR_EXCERPT_CAP]
+        excerpts.append({"source_id": source_id, "text": clipped})
+    return tuple(excerpts)
+
+
+def repair_prompt_data(
+    *,
+    mode: Literal["full", "unusable", "partial"],
+    error: str,
+    expected_count: int,
+    questions: Sequence[GeneratedQuestion],
+    faults: Sequence[Fault],
+    kept: Sequence[GeneratedQuestion],
+    slices: Mapping[str, str],
+    format_instructions: str,
+) -> dict[str, object]:
+    """Data for prompts/quiz/repair.jinja. The original prompt is not included."""
+    focus = [
+        questions[fault.question_index]
+        for fault in faults
+        if isinstance(fault, QuestionFault)
+        and 0 <= fault.question_index < len(questions)
     ]
-    for fault in indexed:
-        lines.append(f"Index {fault.question_index} failed: {fault.reason}")
-        lines.append(questions[fault.question_index].model_dump_json())
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
+    return {
+        "mode": mode,
+        "error": error,
+        "expected_count": expected_count,
+        "kept_stems": [question.stem for question in kept],
+        "excerpts": list(source_excerpts(slices, focus)),
+        "fault_lines": list(_fault_lines(questions, faults)),
+        "format_instructions": format_instructions,
+    }
 
 
 def _validate_generated_key(question: GeneratedQuestion) -> None:

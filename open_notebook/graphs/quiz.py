@@ -1,33 +1,41 @@
 import random
+import time
 import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Literal
 
 from ai_prompter import Prompter
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers.pydantic import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
+from loguru import logger
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.ai.reasoning import ReasoningTask
+from open_notebook.config import llm_timeout_seconds
 from open_notebook.domain.quiz import (
     QUIZ_PROMPT_TOKEN_LIMIT,
     QUIZ_REPAIR_ROUNDS,
+    Fault,
     GeneratedDeck,
     GeneratedQuestion,
+    QuestionFault,
     QuestionType,
     QuizSettings,
     SealedQuestion,
     bloom_for,
     faults_for,
-    full_repair_prompt,
+    kept_questions,
     load_generated_questions,
     merge_repaired,
     nothing_kept,
-    partial_repair_prompt,
+    repair_prompt_data,
+    repeats_kept_stem,
     seal_deck,
     template_data,
-    unusable_repair_prompt,
 )
 from open_notebook.exceptions import (
     OpenNotebookError,
@@ -44,7 +52,31 @@ class QuizState(TypedDict, total=False):
     model_id: str
     slices: dict[str, str]
     settings: QuizSettings
+    deadline: float
     deck: tuple[SealedQuestion, ...]
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+@dataclass
+class RepairBudget:
+    """Repair calls already spent, and how long one more call may take."""
+
+    rounds: int = 0
+    full_rewrites: int = 0
+    deadline: float | None = None
+    call_estimate: float = 0.0
+
+    def out_of_time(self, now: float) -> bool:
+        if self.deadline is None:
+            return False
+        return now + self.call_estimate > self.deadline
+
+    def note_call(self, seconds: float) -> None:
+        if seconds > self.call_estimate:
+            self.call_estimate = seconds
 
 
 def _refuse_oversized(prompt: str) -> None:
@@ -60,13 +92,148 @@ async def _reply(model: BaseChatModel, prompt: str) -> str:
     return clean_thinking_content(extract_text_content(message.content))
 
 
-def _load_questions(
-    text: str,
-) -> tuple[tuple[GeneratedQuestion, ...] | None, QuizModelOutputError | None]:
+Ask = Callable[[str], Awaitable[str]]
+
+
+def _question_faults(
+    faults: tuple[Fault, ...] | list[Fault],
+) -> tuple[QuestionFault, ...]:
+    return tuple(fault for fault in faults if isinstance(fault, QuestionFault))
+
+
+def _render_repair(data: dict[str, object]) -> str:
+    return Prompter(prompt_template="quiz/repair").render(data=data)
+
+
+def _make_ask(model: BaseChatModel, budget: RepairBudget) -> Ask:
+    async def ask(text: str) -> str:
+        _refuse_oversized(text)
+        started = _now()
+        reply = await _reply(model, text)
+        budget.note_call(_now() - started)
+        return reply
+
+    return ask
+
+
+async def _full_rewrite(
+    ask: Ask,
+    budget: RepairBudget,
+    *,
+    mode: Literal["full", "unusable"],
+    error: str,
+    questions: tuple[GeneratedQuestion, ...],
+    faults: tuple[Fault, ...],
+    kept: tuple[GeneratedQuestion, ...],
+    slices: dict[str, str],
+    format_instructions: str,
+    expected_count: int,
+) -> tuple[GeneratedQuestion, ...]:
+    budget.rounds += 1
+    budget.full_rewrites += 1
+    rendered = _render_repair(
+        repair_prompt_data(
+            mode=mode,
+            error=error,
+            expected_count=expected_count,
+            questions=questions,
+            faults=faults,
+            kept=kept,
+            slices=slices,
+            format_instructions=format_instructions,
+        )
+    )
     try:
-        return load_generated_questions(text), None
-    except QuizModelOutputError as error:
-        return None, error
+        return load_generated_questions(await ask(rendered))
+    except QuizModelOutputError as failure:
+        logger.warning(
+            f"quiz repair round {budget.rounds} was not applied: {failure}"
+        )
+        raise
+
+
+async def _partial_round(
+    ask: Ask,
+    budget: RepairBudget,
+    *,
+    questions: tuple[GeneratedQuestion, ...],
+    failing: tuple[QuestionFault, ...],
+    kept: tuple[GeneratedQuestion, ...],
+    num_questions: int,
+    slices: dict[str, str],
+    format_instructions: str,
+) -> tuple[GeneratedQuestion, ...]:
+    in_place = len(questions) == num_questions
+    expected = len(failing) if in_place else num_questions - len(kept)
+    if expected <= 0:
+        return tuple(kept[:num_questions])
+    budget.rounds += 1
+    rendered = _render_repair(
+        repair_prompt_data(
+            mode="partial",
+            error="",
+            expected_count=expected,
+            questions=questions,
+            faults=failing,
+            kept=kept,
+            slices=slices,
+            format_instructions=format_instructions,
+        )
+    )
+    try:
+        repaired = load_generated_questions(await ask(rendered))
+    except QuizModelOutputError as failure:
+        logger.warning(
+            f"quiz repair round {budget.rounds} was not applied: {failure}"
+        )
+        return questions
+    if len(repaired) != expected:
+        logger.warning(
+            f"quiz repair round {budget.rounds} was not applied: "
+            f"reply has {len(repaired)} questions, expected {expected}"
+        )
+        return questions
+    if repeats_kept_stem(repaired, kept):
+        logger.warning(
+            f"quiz repair round {budget.rounds} was not applied: "
+            "repaired question repeats a kept stem"
+        )
+        return questions
+    if in_place:
+        return merge_repaired(questions, failing, repaired)
+    return tuple([*kept, *repaired])[:num_questions]
+
+
+async def _first_reply(
+    ask: Ask,
+    budget: RepairBudget,
+    *,
+    prompt: str,
+    slices: dict[str, str],
+    format_instructions: str,
+) -> tuple[GeneratedQuestion, ...]:
+    try:
+        return load_generated_questions(await ask(prompt))
+    except QuizModelOutputError as failure:
+        if budget.out_of_time(_now()):
+            logger.warning(
+                "quiz repair skipped: "
+                f"{budget.call_estimate:.0f}s does not fit before the job "
+                "deadline, and the first reply was unreadable."
+            )
+            raise
+        return await _full_rewrite(
+            ask,
+            budget,
+            mode="full",
+            error=str(failure),
+            questions=(),
+            faults=(),
+            kept=(),
+            slices=slices,
+            format_instructions=format_instructions,
+            expected_count=0,
+        )
 
 
 async def _questions_with_repair(
@@ -76,73 +243,83 @@ async def _questions_with_repair(
     num_questions: int,
     allowed_types: frozenset[QuestionType],
     slices: dict[str, str],
+    deadline: float | None,
+    format_instructions: str,
 ) -> tuple[GeneratedQuestion, ...]:
-    """Keep questions that pass. Rewrite only the failures, at most twice.
+    """Keep questions that pass. Ask only for failures or missing questions.
 
     A reply that cannot be parsed, or that contains no keepable question, is
     rewritten once as a whole deck. That rewrite counts as one of the two
-    repair rounds.
+    repair rounds. A round is skipped when the job deadline cannot fit another
+    model call. If at least one question is already valid, that deck is returned.
     """
-    rounds = 0
-    full_rewrites = 0
-
-    async def ask(text: str) -> str:
-        _refuse_oversized(text)
-        return await _reply(model, text)
-
-    questions, error = _load_questions(await ask(prompt))
-    if questions is None:
-        rounds += 1
-        full_rewrites += 1
-        if error is None:
-            raise QuizModelOutputError("quiz JSON did not match the schema")
-        questions, error = _load_questions(
-            await ask(full_repair_prompt(prompt, str(error)))
-        )
-        if questions is None:
-            if error is None:
-                raise QuizModelOutputError("quiz JSON did not match the schema")
-            raise error
-
-    while rounds < QUIZ_REPAIR_ROUNDS:
+    budget = RepairBudget(
+        deadline=deadline,
+        call_estimate=llm_timeout_seconds(),
+    )
+    ask = _make_ask(model, budget)
+    questions = await _first_reply(
+        ask,
+        budget,
+        prompt=prompt,
+        slices=slices,
+        format_instructions=format_instructions,
+    )
+    while True:
         faults = faults_for(
             questions,
             num_questions=num_questions,
             allowed_types=allowed_types,
             slices=slices,
         )
+        kept = kept_questions(questions, faults)
+        failing = _question_faults(faults)
+        if len(kept) >= num_questions:
+            return tuple(kept[:num_questions])
         if not faults:
             return questions
-        rounds += 1
-        if nothing_kept(questions, faults):
-            if full_rewrites >= 1:
-                raise QuizModelOutputError(faults[0].reason)
-            full_rewrites += 1
-            questions, error = _load_questions(
-                await ask(unusable_repair_prompt(prompt, questions, faults))
+        if budget.rounds >= QUIZ_REPAIR_ROUNDS:
+            raise QuizModelOutputError(faults[0].reason)
+        if budget.out_of_time(_now()):
+            if kept:
+                logger.warning(
+                    "quiz repair skipped: "
+                    f"{budget.call_estimate:.0f}s does not fit before the "
+                    f"job deadline. Keeping {len(kept)} valid question(s)."
+                )
+                return tuple(kept)
+            logger.warning(
+                "quiz repair skipped: "
+                f"{budget.call_estimate:.0f}s does not fit before the job "
+                "deadline, and no question is valid."
             )
-            if questions is None:
-                if error is None:
-                    raise QuizModelOutputError("quiz JSON did not match the schema")
-                raise error
+            raise QuizModelOutputError(faults[0].reason)
+        if nothing_kept(questions, faults):
+            if budget.full_rewrites >= 1:
+                raise QuizModelOutputError(faults[0].reason)
+            questions = await _full_rewrite(
+                ask,
+                budget,
+                mode="unusable",
+                error=faults[0].reason,
+                questions=questions,
+                faults=faults,
+                kept=(),
+                slices=slices,
+                format_instructions=format_instructions,
+                expected_count=num_questions,
+            )
             continue
-        indexed = tuple(fault for fault in faults if fault.question_index >= 0)
-        repaired, error = _load_questions(
-            await ask(partial_repair_prompt(prompt, questions, indexed))
+        questions = await _partial_round(
+            ask,
+            budget,
+            questions=questions,
+            failing=failing,
+            kept=kept,
+            num_questions=num_questions,
+            slices=slices,
+            format_instructions=format_instructions,
         )
-        if repaired is None or len(repaired) != len(indexed):
-            continue
-        questions = merge_repaired(questions, indexed, repaired)
-
-    faults = faults_for(
-        questions,
-        num_questions=num_questions,
-        allowed_types=allowed_types,
-        slices=slices,
-    )
-    if faults:
-        raise QuizModelOutputError(faults[0].reason)
-    return questions
 
 
 async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
@@ -177,6 +354,8 @@ async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
             num_questions=settings.num_questions,
             allowed_types=allowed,
             slices=slices,
+            deadline=state.get("deadline"),
+            format_instructions=parser.get_format_instructions(),
         )
         deck = seal_deck(questions, random.Random(), lambda: str(uuid.uuid4()))
         return {"deck": deck}
