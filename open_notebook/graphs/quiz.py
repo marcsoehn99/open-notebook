@@ -126,7 +126,7 @@ async def _questions_with_repair(
                     raise QuizModelOutputError("quiz JSON did not match the schema")
                 raise error
             continue
-        indexed = tuple(fault for fault in faults if fault.index >= 0)
+        indexed = tuple(fault for fault in faults if fault.question_index >= 0)
         repaired, error = _load_questions(
             await ask(partial_repair_prompt(prompt, questions, indexed))
         )

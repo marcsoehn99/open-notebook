@@ -26,9 +26,7 @@ def _clear_reasoning_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_default_sends_nothing_for_large_4() -> None:
     assert (
-        reasoning_effort_for(
-            ReasoningTask.QUIZ, provider="mistral", model_name=LARGE_4
-        )
+        reasoning_effort_for(ReasoningTask.QUIZ, provider="mistral", model_name=LARGE_4)
         is None
     )
     kwargs = {"response_format": {"type": "json_object"}}
@@ -69,9 +67,7 @@ def test_other_provider_and_other_mistral_model_send_nothing(
 ) -> None:
     monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_DEFAULT", "high")
     assert (
-        reasoning_effort_for(
-            ReasoningTask.CHAT, provider="openai", model_name="gpt-4o"
-        )
+        reasoning_effort_for(ReasoningTask.CHAT, provider="openai", model_name="gpt-4o")
         is None
     )
     assert (
@@ -100,15 +96,11 @@ def test_task_override_beats_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_DEFAULT", "high")
     monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_QUIZ", "none")
     assert (
-        reasoning_effort_for(
-            ReasoningTask.QUIZ, provider="mistral", model_name=LARGE_4
-        )
+        reasoning_effort_for(ReasoningTask.QUIZ, provider="mistral", model_name=LARGE_4)
         == "none"
     )
     assert (
-        reasoning_effort_for(
-            ReasoningTask.CHAT, provider="mistral", model_name=LARGE_4
-        )
+        reasoning_effort_for(ReasoningTask.CHAT, provider="mistral", model_name=LARGE_4)
         == "high"
     )
 
@@ -133,9 +125,7 @@ def test_invalid_task_value_falls_back_to_default(
     monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_QUIZ", "turbo")
     monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_DEFAULT", "low")
     assert (
-        reasoning_effort_for(
-            ReasoningTask.QUIZ, provider="mistral", model_name=LARGE_4
-        )
+        reasoning_effort_for(ReasoningTask.QUIZ, provider="mistral", model_name=LARGE_4)
         == "none"
     )
 
@@ -167,6 +157,12 @@ class _StubLanguage(LanguageModel):
     def to_langchain(self):
         return self._chat
 
+    def chat_complete(self, *args, **kwargs):
+        raise NotImplementedError
+
+    async def achat_complete(self, *args, **kwargs):
+        raise NotImplementedError
+
 
 @pytest.mark.asyncio
 async def test_provision_omits_effort_and_keeps_response_format_by_default(
@@ -184,9 +180,7 @@ async def test_provision_omits_effort_and_keeps_response_format_by_default(
         seen["kwargs"] = kwargs
         return language
 
-    monkeypatch.setattr(
-        "open_notebook.ai.provision.model_manager.get_model", get_model
-    )
+    monkeypatch.setattr("open_notebook.ai.provision.model_manager.get_model", get_model)
     result = await provision_langchain_model(
         "hello",
         "model:1",
@@ -215,9 +209,7 @@ async def test_provision_sets_effort_only_when_env_asks(
     async def get_model(model_id: str, **kwargs: object) -> _StubLanguage:
         return language
 
-    monkeypatch.setattr(
-        "open_notebook.ai.provision.model_manager.get_model", get_model
-    )
+    monkeypatch.setattr("open_notebook.ai.provision.model_manager.get_model", get_model)
     result = await provision_langchain_model(
         "hello",
         "model:1",

@@ -286,9 +286,9 @@ class GeneratedDeck(BaseModel):
 
 
 class QuestionFault(NamedTuple):
-    """One question the model must rewrite. Index -1 means the deck itself."""
+    """One question the model must rewrite. question_index -1 means the deck itself."""
 
-    index: int
+    question_index: int
     reason: str
 
 
@@ -453,11 +453,9 @@ def faults_for(
     allowed_types: frozenset[QuestionType],
     slices: Mapping[str, str],
 ) -> tuple[QuestionFault, ...]:
-    """Every failing question. An index of -1 means the deck cannot be aligned."""
+    """Every failing question. A question_index of -1 means the deck cannot be aligned."""
     if len(questions) != num_questions:
-        return (
-            QuestionFault(-1, "question count does not match the quiz settings"),
-        )
+        return (QuestionFault(-1, "question count does not match the quiz settings"),)
     faults: list[QuestionFault] = []
     for index, question in enumerate(questions):
         reason = question_fault(question, allowed_types=allowed_types, slices=slices)
@@ -473,7 +471,7 @@ def nothing_kept(
     """True when no question can be saved and the next call must rewrite the deck."""
     if not faults:
         return False
-    if any(fault.index < 0 for fault in faults):
+    if any(fault.question_index < 0 for fault in faults):
         return True
     return len(faults) == len(questions)
 
@@ -510,14 +508,14 @@ def merge_repaired(
     faults: Sequence[QuestionFault],
     replacements: Sequence[GeneratedQuestion],
 ) -> tuple[GeneratedQuestion, ...]:
-    """Put each replacement into the fault's index. Other questions stay."""
+    """Put each replacement into the fault's question_index. Other questions stay."""
     if len(replacements) != len(faults):
         raise QuizModelOutputError("repair did not return the failing questions")
     merged = list(questions)
     for fault, replacement in zip(faults, replacements):
-        if fault.index < 0 or fault.index >= len(merged):
+        if fault.question_index < 0 or fault.question_index >= len(merged):
             raise QuizModelOutputError("repair did not return the failing questions")
-        merged[fault.index] = replacement
+        merged[fault.question_index] = replacement
     return tuple(merged)
 
 
@@ -540,11 +538,11 @@ def unusable_repair_prompt(
         "",
         "No question could be kept. Rewrite the whole quiz.",
     ]
-    indexed = [fault for fault in faults if 0 <= fault.index < len(questions)]
+    indexed = [fault for fault in faults if 0 <= fault.question_index < len(questions)]
     if indexed:
         for fault in indexed:
-            lines.append(f"Index {fault.index} failed: {fault.reason}")
-            lines.append(questions[fault.index].model_dump_json())
+            lines.append(f"Index {fault.question_index} failed: {fault.reason}")
+            lines.append(questions[fault.question_index].model_dump_json())
     else:
         for index, question in enumerate(questions):
             lines.append(f"Index {index} could not be kept.")
@@ -557,7 +555,7 @@ def partial_repair_prompt(
     questions: Sequence[GeneratedQuestion],
     faults: Sequence[QuestionFault],
 ) -> str:
-    indexed = [fault for fault in faults if fault.index >= 0]
+    indexed = [fault for fault in faults if fault.question_index >= 0]
     lines = [
         original,
         "",
@@ -569,8 +567,8 @@ def partial_repair_prompt(
         "",
     ]
     for fault in indexed:
-        lines.append(f"Index {fault.index} failed: {fault.reason}")
-        lines.append(questions[fault.index].model_dump_json())
+        lines.append(f"Index {fault.question_index} failed: {fault.reason}")
+        lines.append(questions[fault.question_index].model_dump_json())
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
