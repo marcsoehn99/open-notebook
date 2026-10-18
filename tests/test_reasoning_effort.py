@@ -242,3 +242,76 @@ async def test_provision_sets_effort_only_when_env_asks(
     assert "reasoning_effort" not in chat.model_kwargs
     assert result.model_kwargs["reasoning_effort"] == "none"
     assert result.model_kwargs["response_format"] == {"type": "json_object"}
+
+
+def _mistral_chat():
+    from langchain_mistralai.chat_models import ChatMistralAI
+
+    return ChatMistralAI(
+        api_key="dummy",
+        model=LARGE_4,
+        temperature=0,
+        model_kwargs={"response_format": {"type": "json_object"}},
+    )
+
+
+async def _provision_chat(monkeypatch: pytest.MonkeyPatch, chat: object):
+    language = _StubLanguage(model_name=LARGE_4)
+    language._provider_name = "mistral"
+    language._chat = chat
+
+    async def get_model(model_id: str, **kwargs: object) -> _StubLanguage:
+        del model_id, kwargs
+        return language
+
+    monkeypatch.setattr("open_notebook.ai.provision.model_manager.get_model", get_model)
+    return await provision_langchain_model(
+        "hello",
+        "model:1",
+        "transformation",
+        task=ReasoningTask.QUIZ,
+        max_tokens=8192,
+        structured={"type": "json"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_real_mistral_model_omits_effort_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat = _mistral_chat()
+    result = await _provision_chat(monkeypatch, chat)
+    assert "reasoning_effort" not in result._default_params
+    assert result._default_params["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_real_mistral_model_sends_effort_only_when_env_asks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_QUIZ", "low")
+    chat = _mistral_chat()
+    before = dict(chat.model_kwargs)
+    result = await _provision_chat(monkeypatch, chat)
+    assert chat.model_kwargs == before
+    assert "reasoning_effort" not in chat._default_params
+    params = result._default_params
+    assert params["reasoning_effort"] == "none"
+    assert params["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_provision_warns_when_model_kwargs_is_not_a_dict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_QUIZ", "high")
+    chat = type("Chat", (), {})()
+    chat.model_kwargs = None
+    messages: list[str] = []
+    sink = logger.add(lambda message: messages.append(str(message)), level="WARNING")
+    try:
+        result = await _provision_chat(monkeypatch, chat)
+    finally:
+        logger.remove(sink)
+    assert result is chat
+    assert any("not a dict" in message for message in messages)

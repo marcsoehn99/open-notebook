@@ -1,16 +1,17 @@
 """Quiz repair rewrites failing questions and keeps the ones that passed."""
 
 import json
-from pathlib import Path
 
 import pytest
+from loguru import logger
 
+from commands.quiz_commands import QUIZ_JOB_TIMEOUT_SECONDS
 from open_notebook.ai.reasoning import ReasoningTask
-from open_notebook.domain.quiz import parse_settings
+from open_notebook.domain.quiz import QUIZ_SOURCE_TOKEN_BUDGET, parse_settings
 from open_notebook.exceptions import QuizModelOutputError
 from open_notebook.graphs.quiz import generate_node
+from open_notebook.utils import token_count
 
-ROOT = Path(__file__).resolve().parents[1]
 SOURCE = "source:essay"
 GOOD_QUOTE = "capital is Paris"
 RIVER_QUOTE = "the river is slow"
@@ -46,12 +47,12 @@ def _deck(*questions: dict[str, object]) -> str:
 
 
 class _Message:
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: object) -> None:
         self.content = content
 
 
 class _ScriptedModel:
-    def __init__(self, replies: list[str]) -> None:
+    def __init__(self, replies: list[object]) -> None:
         self._replies = replies
         self.prompts: list[str] = []
 
@@ -60,33 +61,60 @@ class _ScriptedModel:
         return _Message(self._replies[len(self.prompts) - 1])
 
 
-async def _run(monkeypatch: pytest.MonkeyPatch, replies: list[str]):
-    model = _ScriptedModel(replies)
+class _Clock:
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
+class _ClockedModel(_ScriptedModel):
+    def __init__(self, replies: list[object], clock: _Clock, step: float) -> None:
+        super().__init__(replies)
+        self._clock = clock
+        self._step = step
+
+    async def ainvoke(self, prompt: str) -> _Message:
+        self._clock.t += self._step
+        return await super().ainvoke(prompt)
+
+
+async def _run(
+    monkeypatch: pytest.MonkeyPatch,
+    replies: list[object],
+    *,
+    deadline: float | None = None,
+    slices: dict[str, str] | None = None,
+    model: _ScriptedModel | None = None,
+):
+    scripted = model or _ScriptedModel(replies)
     seen: dict[str, object] = {}
 
     async def _provision(*args: object, **kwargs: object) -> _ScriptedModel:
         seen["kwargs"] = kwargs
-        return model
+        return scripted
 
     monkeypatch.setattr(
         "open_notebook.graphs.quiz.provision_langchain_model",
         _provision,
     )
-    result = await generate_node(
-        {
-            "quiz_id": "quiz:1",
-            "model_id": "model:1",
-            "slices": {SOURCE: SLICE},
-            "settings": _settings(),
-        },
-        {},
-    )
-    return result, model.prompts, seen["kwargs"]
+    state: dict[str, object] = {
+        "quiz_id": "quiz:1",
+        "model_id": "model:1",
+        "slices": slices or {SOURCE: SLICE},
+        "settings": _settings(),
+    }
+    if deadline is not None:
+        state["deadline"] = deadline
+    result = await generate_node(state, {})
+    return result, scripted.prompts, seen["kwargs"]
 
 
-def test_quiz_job_timeout_stays_six_minutes() -> None:
-    text = (ROOT / "commands/quiz_commands.py").read_text()
-    assert "QUIZ_JOB_TIMEOUT_SECONDS = 6 * 60" in text
+def _capture_warnings() -> tuple[list[str], int]:
+    messages: list[str] = []
+    sink = logger.add(lambda message: messages.append(str(message)), level="WARNING")
+    return messages, sink
 
 
 @pytest.mark.asyncio
@@ -211,3 +239,226 @@ async def test_second_unusable_deck_does_not_call_the_model_again(
             {},
         )
     assert len(model.prompts) == 2
+
+
+@pytest.mark.asyncio
+async def test_unreadable_first_reply_is_rewritten_without_the_original_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    other = _question("Name the river.", RIVER_QUOTE)
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        ["not json", _deck(good, other)],
+    )
+    assert len(prompts) == 2
+    assert "The previous JSON failed validation" in prompts[1]
+    assert "Write a quiz from the source text below." not in prompts[1]
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_short_deck_asks_only_for_the_missing_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kept = _question("Name the city.", GOOD_QUOTE)
+    missing = _question("Name the river.", RIVER_QUOTE)
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        [_deck(kept), _deck(missing)],
+    )
+    repair = prompts[1]
+    assert len(prompts) == 2
+    assert "exactly 1" in repair
+    assert "Do not repeat these stems" in repair
+    assert "Name the city." in repair
+    assert "failed:" not in repair
+    assert "Write a quiz from the source text below." not in repair
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repair_with_the_wrong_length_warns_and_uses_the_next_round(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    fixed = _question("Name the river.", RIVER_QUOTE)
+    extra = _question("Name the extra.", RIVER_QUOTE)
+    messages, sink = _capture_warnings()
+    try:
+        result, prompts, _kwargs = await _run(
+            monkeypatch,
+            [_deck(good, bad), _deck(fixed, extra), _deck(fixed)],
+        )
+    finally:
+        logger.remove(sink)
+    assert len(prompts) == 3
+    assert any(
+        "was not applied" in message and "expected 1" in message
+        for message in messages
+    )
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
+    assert result["deck"][1].quote == RIVER_QUOTE
+
+
+@pytest.mark.asyncio
+async def test_unreadable_repair_warns_and_uses_the_next_round(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    fixed = _question("Name the river.", RIVER_QUOTE)
+    messages, sink = _capture_warnings()
+    try:
+        result, prompts, _kwargs = await _run(
+            monkeypatch,
+            [_deck(good, bad), "still not json", _deck(fixed)],
+        )
+    finally:
+        logger.remove(sink)
+    assert len(prompts) == 3
+    assert any("was not applied" in message for message in messages)
+    assert any("round 1" in message for message in messages)
+    assert result["deck"][1].quote == RIVER_QUOTE
+
+
+@pytest.mark.asyncio
+async def test_question_that_fails_once_passes_on_the_second_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    fixed = _question("Name the river.", RIVER_QUOTE)
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        [_deck(good, bad), _deck(bad), _deck(fixed)],
+    )
+    assert len(prompts) == 3
+    assert result["deck"][0].quote == GOOD_QUOTE
+    assert result["deck"][1].quote == RIVER_QUOTE
+
+
+@pytest.mark.asyncio
+async def test_thinking_blocks_in_the_quiz_reply_are_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    other = _question("Name the river.", RIVER_QUOTE)
+    hidden = "HIDDEN-QUIZ-THINKING"
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        [
+            [
+                {"type": "thinking", "thinking": [{"type": "text", "text": hidden}]},
+                {"type": "reasoning", "reasoning": hidden, "text": hidden},
+                {"type": "text", "text": _deck(good, other)},
+            ]
+        ],
+    )
+    assert len(prompts) == 1
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repaired_question_that_repeats_a_kept_stem_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    duplicate = _question("Name the city.", RIVER_QUOTE)
+    fixed = _question("Name the river.", RIVER_QUOTE)
+    messages, sink = _capture_warnings()
+    try:
+        result, prompts, _kwargs = await _run(
+            monkeypatch,
+            [_deck(good, bad), _deck(duplicate), _deck(fixed)],
+        )
+    finally:
+        logger.remove(sink)
+    assert len(prompts) == 3
+    assert any("repeats a kept stem" in message for message in messages)
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_deadline_keeps_valid_questions_without_a_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ESPERANTO_LLM_TIMEOUT", "180")
+    clock = _Clock()
+    monkeypatch.setattr("open_notebook.graphs.quiz._now", clock)
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    model = _ClockedModel([_deck(good, bad), _deck(bad)], clock, step=200)
+    messages, sink = _capture_warnings()
+    try:
+        result, prompts, _kwargs = await _run(
+            monkeypatch,
+            [],
+            deadline=float(QUIZ_JOB_TIMEOUT_SECONDS),
+            model=model,
+        )
+    finally:
+        logger.remove(sink)
+    assert len(prompts) == 1
+    assert clock.t <= QUIZ_JOB_TIMEOUT_SECONDS
+    assert any("quiz repair skipped" in message for message in messages)
+    assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+def _source_near_budget() -> str:
+    head = "The capital is Paris today and the river is slow. "
+    padding = "padding word " * 200
+    text = head
+    target = int(QUIZ_SOURCE_TOKEN_BUDGET * 0.9)
+    while token_count(text) < target:
+        text += padding
+    return text + " TAIL-MARKER-SHOULD-NOT-BE-IN-REPAIR"
+
+
+@pytest.mark.asyncio
+async def test_large_source_repair_stays_small_and_inside_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ESPERANTO_LLM_TIMEOUT", "180")
+    clock = _Clock()
+    monkeypatch.setattr("open_notebook.graphs.quiz._now", clock)
+    source = _source_near_budget()
+    assert token_count(source) >= int(QUIZ_SOURCE_TOKEN_BUDGET * 0.9)
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    fixed = _question("Name the river.", RIVER_QUOTE)
+    model = _ClockedModel(
+        [_deck(good, bad), _deck(fixed)],
+        clock,
+        step=50,
+    )
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        [],
+        deadline=float(QUIZ_JOB_TIMEOUT_SECONDS),
+        slices={SOURCE: source},
+        model=model,
+    )
+    assert len(prompts) == 2
+    assert "TAIL-MARKER-SHOULD-NOT-BE-IN-REPAIR" in prompts[0]
+    assert "TAIL-MARKER-SHOULD-NOT-BE-IN-REPAIR" not in prompts[1]
+    assert token_count(prompts[1]) * 10 < token_count(prompts[0])
+    assert clock.t <= QUIZ_JOB_TIMEOUT_SECONDS
+    assert [card.quote for card in result["deck"]] == [GOOD_QUOTE, RIVER_QUOTE]
