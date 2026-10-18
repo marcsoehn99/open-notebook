@@ -213,6 +213,22 @@ If an engine is selected in Settings but its runtime is missing, extraction fall
 |----------|---------|---------|-------------|
 | `OPEN_NOTEBOOK_QUIZ_MODEL` | `mistral-large-4` | API | Language-model name used to write a notebook quiz. At create time the API resolves the name to a language-model row. If no row has that name, the quiz is not started |
 
+## Optional Mistral reasoning
+
+When these variables are unset, Open Notebook sends no `reasoning_effort` field. That is the default for every language-model task. The variables do not apply to embeddings, OCR, speech to text, or text to speech.
+
+Mistral documents `none` and `high` at [Reasoning](https://docs.mistral.ai/studio/conversations/reasoning). Open Notebook sends the field only for a Mistral model named `mistral-small-latest`, or whose name starts with `mistral-large-4` or `mistral-medium-3-5`. `none`, `minimal`, and `low` are sent as `none`. `medium` and `high` are sent as `high`. `off` and `provider_default` send nothing. Any other value logs a warning and falls back to that default. The installed libraries do not say whether the API accepts `low`.
+
+| Variable | Default | Read by | Description |
+|----------|---------|---------|-------------|
+| `OPEN_NOTEBOOK_REASONING_DEFAULT` | unset (send nothing) | API + Worker | Level used when the task variable below is unset |
+| `OPEN_NOTEBOOK_REASONING_CHAT` | unset (send nothing) | API + Worker | Notebook chat |
+| `OPEN_NOTEBOOK_REASONING_ASK` | unset (send nothing) | API + Worker | Ask strategy, partial answers, and the final answer |
+| `OPEN_NOTEBOOK_REASONING_SOURCE_CHAT` | unset (send nothing) | API + Worker | Source chat |
+| `OPEN_NOTEBOOK_REASONING_SHORT` | unset (send nothing) | API + Worker | Short prompts, including generated titles |
+| `OPEN_NOTEBOOK_REASONING_TRANSFORMATION` | unset (send nothing) | API + Worker | Transformations |
+| `OPEN_NOTEBOOK_REASONING_QUIZ` | unset (send nothing) | API + Worker | Quiz generation |
+
 ---
 
 ## Logging and tracing
