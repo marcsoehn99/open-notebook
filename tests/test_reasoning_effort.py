@@ -195,13 +195,32 @@ async def test_provision_omits_effort_and_keeps_response_format_by_default(
     assert "reasoning_effort" not in result.model_kwargs
 
 
+class _CopyChat:
+    """Stand-in with pydantic's model_copy so provision can avoid in-place kwargs."""
+
+    def __init__(self, model_kwargs: dict[str, object]) -> None:
+        self.model_kwargs = model_kwargs
+        self.callbacks: list[object] | None = None
+
+    def model_copy(
+        self, *, update: dict[str, object] | None = None, deep: bool = False
+    ) -> _CopyChat:
+        del deep
+        copied = _CopyChat(dict(self.model_kwargs))
+        copied.callbacks = list(self.callbacks) if self.callbacks else None
+        if update:
+            for key, value in update.items():
+                setattr(copied, key, value)
+        return copied
+
+
 @pytest.mark.asyncio
 async def test_provision_sets_effort_only_when_env_asks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_QUIZ", "low")
-    chat = type("Chat", (), {})()
-    chat.model_kwargs = {"response_format": {"type": "json_object"}}
+    original = {"response_format": {"type": "json_object"}}
+    chat = _CopyChat(original)
     language = _StubLanguage(model_name="mistral-large-4-0")
     language._provider_name = "mistral"
     language._chat = chat
@@ -218,5 +237,8 @@ async def test_provision_sets_effort_only_when_env_asks(
         max_tokens=8192,
         structured={"type": "json"},
     )
+    assert result is not chat
+    assert original == {"response_format": {"type": "json_object"}}
+    assert "reasoning_effort" not in chat.model_kwargs
     assert result.model_kwargs["reasoning_effort"] == "none"
     assert result.model_kwargs["response_format"] == {"type": "json_object"}

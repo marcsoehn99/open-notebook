@@ -4,7 +4,11 @@ from loguru import logger
 
 from open_notebook.ai.langfuse_tracing import with_langfuse_callbacks
 from open_notebook.ai.models import model_manager
-from open_notebook.ai.reasoning import ReasoningTask, apply_reasoning_effort
+from open_notebook.ai.reasoning import (
+    ReasoningTask,
+    apply_reasoning_effort,
+    reasoning_effort_for,
+)
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils import token_count
 
@@ -67,12 +71,38 @@ async def provision_langchain_model(
 
     langchain_model = model.to_langchain()
     if task is not None:
-        model_kwargs = getattr(langchain_model, "model_kwargs", None)
-        if isinstance(model_kwargs, dict):
-            apply_reasoning_effort(
-                model_kwargs,
-                task,
-                provider=model.provider,
-                model_name=model.get_model_name() or "",
-            )
+        langchain_model = _copy_with_reasoning_effort(
+            langchain_model,
+            task,
+            provider=model.provider,
+            model_name=model.get_model_name() or "",
+        )
     return with_langfuse_callbacks(langchain_model)
+
+
+def _copy_with_reasoning_effort(
+    langchain_model: BaseChatModel,
+    task: ReasoningTask,
+    *,
+    provider: str,
+    model_name: str,
+) -> BaseChatModel:
+    """Copy the model when effort is set, so the caller's kwargs stay unchanged."""
+    effort = reasoning_effort_for(task, provider=provider, model_name=model_name)
+    if effort is None:
+        return langchain_model
+    model_kwargs = getattr(langchain_model, "model_kwargs", None)
+    if not isinstance(model_kwargs, dict):
+        logger.warning(
+            f"Not sending reasoning_effort={effort} for {task.value}: "
+            f"model_kwargs is {type(model_kwargs).__name__}, not a dict."
+        )
+        return langchain_model
+    updated = dict(model_kwargs)
+    apply_reasoning_effort(
+        updated,
+        task,
+        provider=provider,
+        model_name=model_name,
+    )
+    return langchain_model.model_copy(update={"model_kwargs": updated})
