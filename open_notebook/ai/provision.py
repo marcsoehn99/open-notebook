@@ -70,14 +70,21 @@ async def provision_langchain_model(
         )
 
     langchain_model = model.to_langchain()
+    on_task = "none"
+    sent_effort = "provider_default"
     if task is not None:
-        langchain_model = _copy_with_reasoning_effort(
+        on_task = task.value
+        langchain_model, sent_effort = _copy_with_reasoning_effort(
             langchain_model,
             task,
             provider=model.provider,
             model_name=model.get_model_name() or "",
         )
-    return with_langfuse_callbacks(langchain_model)
+    return with_langfuse_callbacks(
+        langchain_model,
+        on_task=on_task,
+        reasoning_effort=sent_effort,
+    )
 
 
 def _copy_with_reasoning_effort(
@@ -86,18 +93,22 @@ def _copy_with_reasoning_effort(
     *,
     provider: str,
     model_name: str,
-) -> BaseChatModel:
-    """Copy the model when effort is set, so the caller's kwargs stay unchanged."""
+) -> tuple[BaseChatModel, str]:
+    """Copy the model when effort is set, so the caller's kwargs stay unchanged.
+
+    The second value is the effort written onto the request, or
+    ``provider_default`` when the field is left off.
+    """
     effort = reasoning_effort_for(task, provider=provider, model_name=model_name)
     if effort is None:
-        return langchain_model
+        return langchain_model, "provider_default"
     model_kwargs = getattr(langchain_model, "model_kwargs", None)
     if not isinstance(model_kwargs, dict):
         logger.warning(
             f"Not sending reasoning_effort={effort} for {task.value}: "
             f"model_kwargs is {type(model_kwargs).__name__}, not a dict."
         )
-        return langchain_model
+        return langchain_model, "provider_default"
     updated = dict(model_kwargs)
     apply_reasoning_effort(
         updated,
@@ -105,4 +116,5 @@ def _copy_with_reasoning_effort(
         provider=provider,
         model_name=model_name,
     )
-    return langchain_model.model_copy(update={"model_kwargs": updated})
+    copied = langchain_model.model_copy(update={"model_kwargs": updated})
+    return copied, effort

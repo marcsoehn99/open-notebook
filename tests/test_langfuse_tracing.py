@@ -7,16 +7,21 @@ import sys
 import types
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 
 import pytest
+from esperanto import LanguageModel
 
 from open_notebook.ai.langfuse_tracing import (
     DEFAULT_LANGFUSE_HOST,
     langfuse_callbacks,
     mask_langfuse_payload,
     parse_langfuse_settings,
+    parse_trace_tags,
     with_langfuse_callbacks,
 )
+from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.reasoning import ReasoningTask
 
 _LANGFUSE_ENV = (
     "LANGFUSE_PUBLIC_KEY",
@@ -203,3 +208,199 @@ def test_host_wins_over_base_url() -> None:
     )
     assert settings is not None
     assert settings.host == "https://host.example"
+
+
+def test_parse_trace_tags_trims_and_drops_empty_parts() -> None:
+    assert parse_trace_tags({}) == ()
+    assert parse_trace_tags({"OPEN_NOTEBOOK_TRACE_TAGS": " alpha , , beta , alpha "}) == (
+        "alpha",
+        "beta",
+    )
+
+
+def test_tracing_off_ignores_trace_tags(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_langfuse_env(monkeypatch)
+    monkeypatch.setenv("OPEN_NOTEBOOK_TRACE_TAGS", "should-not-attach")
+    model = object()
+
+    with _forbid_langfuse_import(monkeypatch):
+        traced = with_langfuse_callbacks(
+            model,  # type: ignore[arg-type]
+            on_task="quiz",
+            reasoning_effort="none",
+        )
+        assert traced is model
+
+
+def _enable_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_langfuse_env(monkeypatch)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-placeholder")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-placeholder")
+    monkeypatch.setenv("LANGFUSE_HOST", "")
+
+    class _Langfuse:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+
+    package = types.ModuleType("langfuse")
+    package.__path__ = []  # type: ignore[attr-defined]
+    package.Langfuse = _Langfuse  # type: ignore[attr-defined]
+    langchain_mod = types.ModuleType("langfuse.langchain")
+
+    class _Handler:
+        pass
+
+    langchain_mod.CallbackHandler = _Handler  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "langfuse", package)
+    monkeypatch.setitem(sys.modules, "langfuse.langchain", langchain_mod)
+
+
+class _CopyChat:
+    def __init__(self) -> None:
+        self.model_kwargs: dict[str, object] | None = {
+            "response_format": {"type": "json_object"}
+        }
+        self.tags: list[str] | None = ["kept"]
+        self.metadata: dict[str, object] | None = {"caller": "kept"}
+        self.callbacks: list[object] | None = None
+
+    def model_copy(
+        self, *, update: dict[str, object] | None = None, deep: bool = False
+    ) -> _CopyChat:
+        del deep
+        copied = _CopyChat()
+        if isinstance(self.model_kwargs, dict):
+            copied.model_kwargs = dict(self.model_kwargs)
+        else:
+            copied.model_kwargs = self.model_kwargs
+        copied.tags = list(self.tags) if self.tags is not None else None
+        copied.metadata = dict(self.metadata) if self.metadata is not None else None
+        copied.callbacks = list(self.callbacks) if self.callbacks else None
+        if update:
+            for key, value in update.items():
+                setattr(copied, key, value)
+        return copied
+
+
+@dataclass
+class _StubLanguage(LanguageModel):
+    def _get_models(self):
+        return []
+
+    @property
+    def provider(self) -> str:
+        return "mistral"
+
+    def _get_default_model(self) -> str:
+        return "mistral-large-4"
+
+    def to_langchain(self) -> _CopyChat:
+        return self._chat
+
+    def chat_complete(self, *args: object, **kwargs: object) -> None:
+        raise NotImplementedError
+
+    async def achat_complete(self, *args: object, **kwargs: object) -> None:
+        raise NotImplementedError
+
+
+def _patch_get_model(monkeypatch: pytest.MonkeyPatch, chat: _CopyChat) -> None:
+    language = _StubLanguage(model_name="mistral-large-4")
+    language._chat = chat
+
+    async def get_model(model_id: str, **kwargs: object) -> _StubLanguage:
+        del model_id, kwargs
+        return language
+
+    monkeypatch.setattr("open_notebook.ai.provision.model_manager.get_model", get_model)
+
+
+def test_traced_model_carries_tags_and_run_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_tracing(monkeypatch)
+    monkeypatch.setenv("OPEN_NOTEBOOK_TRACE_TAGS", " alpha , , beta , alpha ")
+    chat = _CopyChat()
+
+    traced = with_langfuse_callbacks(chat, on_task="quiz", reasoning_effort="none")
+
+    assert traced is not chat
+    assert chat.tags == ["kept"]
+    assert chat.metadata == {"caller": "kept"}
+    assert traced.tags == ["kept", "alpha", "beta"]
+    assert traced.metadata == {
+        "caller": "kept",
+        "on_task": "quiz",
+        "reasoning_effort": "none",
+        "langfuse_tags": ["alpha", "beta"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_provision_records_sent_effort_and_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_tracing(monkeypatch)
+    monkeypatch.delenv("OPEN_NOTEBOOK_REASONING_QUIZ", raising=False)
+    monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_QUIZ", "low")
+    monkeypatch.setenv("OPEN_NOTEBOOK_TRACE_TAGS", "variant-a")
+    chat = _CopyChat()
+    _patch_get_model(monkeypatch, chat)
+    result = await provision_langchain_model(
+        "hello",
+        "model:1",
+        "transformation",
+        task=ReasoningTask.QUIZ,
+    )
+
+    assert chat.model_kwargs == {"response_format": {"type": "json_object"}}
+    assert chat.metadata == {"caller": "kept"}
+    assert chat.tags == ["kept"]
+    assert result.model_kwargs["reasoning_effort"] == "none"
+    assert result.tags == ["kept", "variant-a"]
+    assert result.metadata["on_task"] == "quiz"
+    assert result.metadata["reasoning_effort"] == "none"
+    assert result.metadata["langfuse_tags"] == ["variant-a"]
+    assert result.metadata["caller"] == "kept"
+
+
+@pytest.mark.asyncio
+async def test_provision_records_provider_default_when_nothing_is_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_tracing(monkeypatch)
+    monkeypatch.delenv("OPEN_NOTEBOOK_TRACE_TAGS", raising=False)
+    monkeypatch.delenv("OPEN_NOTEBOOK_REASONING_QUIZ", raising=False)
+    monkeypatch.delenv("OPEN_NOTEBOOK_REASONING_DEFAULT", raising=False)
+    chat = _CopyChat()
+    chat.model_kwargs = None
+    _patch_get_model(monkeypatch, chat)
+    with_task = await provision_langchain_model(
+        "hello",
+        "model:1",
+        "transformation",
+        task=ReasoningTask.QUIZ,
+    )
+    without_task = await provision_langchain_model(
+        "hello",
+        "model:1",
+        "transformation",
+    )
+    monkeypatch.setenv("OPEN_NOTEBOOK_REASONING_QUIZ", "low")
+    asked_but_not_sent = await provision_langchain_model(
+        "hello",
+        "model:1",
+        "transformation",
+        task=ReasoningTask.QUIZ,
+    )
+
+    assert chat.model_kwargs is None
+    assert chat.metadata == {"caller": "kept"}
+    assert "langfuse_tags" not in with_task.metadata
+    assert with_task.tags == ["kept"]
+    assert with_task.metadata["on_task"] == "quiz"
+    assert with_task.metadata["reasoning_effort"] == "provider_default"
+    assert without_task.metadata["on_task"] == "none"
+    assert without_task.metadata["reasoning_effort"] == "provider_default"
+    assert asked_but_not_sent.model_kwargs is None
+    assert asked_but_not_sent.metadata["reasoning_effort"] == "provider_default"

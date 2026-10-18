@@ -115,6 +115,49 @@ def _install_trace_mask(public_key: str) -> None:
     instance.mask = mask_langfuse_payload
 
 
+def parse_trace_tags(env: Mapping[str, str]) -> tuple[str, ...]:
+    """Tags from ``OPEN_NOTEBOOK_TRACE_TAGS``. Empty parts are dropped."""
+    seen: set[str] = set()
+    tags: list[str] = []
+    for part in env.get("OPEN_NOTEBOOK_TRACE_TAGS", "").split(","):
+        tag = part.strip()
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+    return tuple(tags)
+
+
+def _merged_tags(model: BaseChatModel, tags: tuple[str, ...]) -> list[str] | None:
+    if not tags:
+        return None
+    current = model.tags if isinstance(model.tags, list) else []
+    merged = list(current)
+    seen = set(merged)
+    for tag in tags:
+        if tag in seen:
+            continue
+        seen.add(tag)
+        merged.append(tag)
+    return merged
+
+
+def _trace_metadata(
+    model: BaseChatModel,
+    *,
+    tags: tuple[str, ...],
+    on_task: str,
+    reasoning_effort: str,
+) -> dict[str, Any]:
+    current = model.metadata if isinstance(model.metadata, dict) else {}
+    merged = dict(current)
+    merged["on_task"] = on_task
+    merged["reasoning_effort"] = reasoning_effort
+    if tags:
+        merged["langfuse_tags"] = list(tags)
+    return merged
+
+
 def langfuse_callbacks() -> list[BaseCallbackHandler]:
     """Callbacks for the current process. Empty when tracing is off."""
     settings = parse_langfuse_settings(os.environ)
@@ -152,18 +195,40 @@ def langfuse_callbacks() -> list[BaseCallbackHandler]:
     return [handler]
 
 
-def with_langfuse_callbacks(model: BaseChatModel) -> BaseChatModel:
+def with_langfuse_callbacks(
+    model: BaseChatModel,
+    *,
+    on_task: str = "none",
+    reasoning_effort: str = "provider_default",
+) -> BaseChatModel:
     """Return a model that reports calls to Langfuse.
 
-    The same model is returned when tracing is off.
+    The same model is returned when tracing is off. When tracing is on, the
+    copy carries LangChain tags from ``OPEN_NOTEBOOK_TRACE_TAGS`` and metadata
+    ``langfuse_tags``, ``on_task``, and ``reasoning_effort``. ``on_task`` is a
+    ``ReasoningTask`` value or ``none``. ``reasoning_effort`` is the value sent
+    on the request, or ``provider_default`` when that field is absent.
     """
     callbacks = langfuse_callbacks()
     if not callbacks:
         return model
+    tags = parse_trace_tags(os.environ)
+    update: dict[str, Any] = {
+        "callbacks": callbacks,
+        "metadata": _trace_metadata(
+            model,
+            tags=tags,
+            on_task=on_task,
+            reasoning_effort=reasoning_effort,
+        ),
+    }
+    merged_tags = _merged_tags(model, tags)
+    if merged_tags is not None:
+        update["tags"] = merged_tags
     try:
         # to_langchain() can return a cached instance. Copy it so concurrent
-        # provisions do not share one callbacks list.
-        return model.model_copy(update={"callbacks": callbacks})
+        # provisions do not share one callbacks list or one metadata dict.
+        return model.model_copy(update=update)
     except Exception:
         logger.exception(
             "Could not attach Langfuse callbacks. The model call will run without tracing."

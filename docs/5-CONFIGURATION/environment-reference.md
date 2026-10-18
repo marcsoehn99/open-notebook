@@ -267,10 +267,11 @@ Each variable below is unset by default. A task variable overrides `OPEN_NOTEBOO
 | `LANGFUSE_PUBLIC_KEY` | none | API + Worker | Langfuse public key. Tracing stays off until this and `LANGFUSE_SECRET_KEY` are both set |
 | `LANGFUSE_SECRET_KEY` | none | API + Worker | Langfuse secret key. Pair it with `LANGFUSE_PUBLIC_KEY` |
 | `LANGFUSE_HOST` | `https://cloud.langfuse.com` | API + Worker | Langfuse base URL when tracing is on. The default is Langfuse Cloud EU. `LANGFUSE_BASE_URL` is used only when `LANGFUSE_HOST` is unset |
+| `OPEN_NOTEBOOK_TRACE_TAGS` | unset | API + Worker | Comma-separated tags for each traced model call. Parts are trimmed and empty parts are ignored. Ignored when tracing is off |
 
 Tracing sends prompts and source content to LangSmith. Setup: https://smith.langchain.com/
 
-Langfuse tracing is off when either key is unset. Open Notebook does not import the Langfuse client on that path and does not contact Langfuse. When both keys are set, each language-model call provisioned for a graph records the prompt, token counts and latency. Thinking and reasoning parts, including `<think>` blocks, are removed before that payload is stored. Langfuse computes cost from the token counts. The same variables must be visible to the API and the worker (`make api` and `make worker-start` load them from `.env`). A later evaluation set, not built yet, is described in [Langfuse evaluation datasets](../7-DEVELOPMENT/langfuse-evaluation-datasets.md).
+Langfuse tracing is off when either key is unset. Open Notebook does not import the Langfuse client on that path and does not contact Langfuse. When both keys are set, each language-model call provisioned for a graph records the prompt, token counts and latency. Thinking and reasoning parts, including `<think>` blocks, are removed before that payload is stored. Langfuse computes cost from the token counts. `OPEN_NOTEBOOK_TRACE_TAGS` is read only on that path. The tags are LangChain tags and the metadata list `langfuse_tags`. The same metadata records `on_task` (the provisioned task, or `none`) and `reasoning_effort` (the value sent on the request, or `provider_default` when the field is absent). The same variables must be visible to the API and the worker (`make api` and `make worker-start` load them from `.env`). A later evaluation set, not built yet, is described in [Langfuse evaluation datasets](../7-DEVELOPMENT/langfuse-evaluation-datasets.md).
 
 SurrealDB's own log level is the `--log` argument in the `surrealdb` service's `command:` (`info` in the shipped compose file).
 
