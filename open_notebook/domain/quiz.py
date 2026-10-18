@@ -4,7 +4,7 @@ import json
 import os
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from typing import Annotated, Any, ClassVar, Literal, TypedDict, Union, cast
+from typing import Annotated, Any, ClassVar, Literal, NamedTuple, TypedDict, Union, cast
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -33,6 +33,7 @@ QUIZ_PROMPT_TOKEN_LIMIT = 100_000
 QUIZ_SOURCE_TOKEN_BUDGET = 80_000
 MIN_QUOTE_CHARS = 15
 MAX_QUESTIONS = 10
+QUIZ_REPAIR_ROUNDS = 2
 CLOZE_BLANK = "____"
 QUIZ_ERROR_INVALID_OUTPUT = "invalid_output"
 QUIZ_ERROR_EMPTY_SOURCE = "empty_source"
@@ -284,6 +285,13 @@ class GeneratedDeck(BaseModel):
     questions: tuple[GeneratedQuestion, ...]
 
 
+class QuestionFault(NamedTuple):
+    """One question the model must rewrite. Index -1 means the deck itself."""
+
+    index: int
+    reason: str
+
+
 def configured_model_name() -> str:
     name = os.environ.get("OPEN_NOTEBOOK_QUIZ_MODEL", "").strip()
     return name or DEFAULT_QUIZ_MODEL_NAME
@@ -414,16 +422,14 @@ def quote_is_verbatim(quote: str, sent_slice: str) -> bool:
     return len(quote) >= MIN_QUOTE_CHARS and quote in sent_slice
 
 
-def validate_deck(
-    questions: Sequence[GeneratedQuestion],
+def question_fault(
+    question: GeneratedQuestion,
     *,
-    num_questions: int,
     allowed_types: frozenset[QuestionType],
     slices: Mapping[str, str],
-) -> None:
-    if len(questions) != num_questions:
-        raise QuizModelOutputError("question count does not match the quiz settings")
-    for question in questions:
+) -> str | None:
+    """Why this question cannot be kept, or None when it passes."""
+    try:
         if question.type not in allowed_types:
             raise QuizModelOutputError(f"question type {question.type} is not allowed")
         if question.source_id not in slices:
@@ -435,6 +441,138 @@ def validate_deck(
         if not question.explanation.strip():
             raise QuizModelOutputError("explanation is empty")
         _validate_generated_key(question)
+    except QuizModelOutputError as error:
+        return str(error)
+    return None
+
+
+def faults_for(
+    questions: Sequence[GeneratedQuestion],
+    *,
+    num_questions: int,
+    allowed_types: frozenset[QuestionType],
+    slices: Mapping[str, str],
+) -> tuple[QuestionFault, ...]:
+    """Every failing question. An index of -1 means the deck cannot be aligned."""
+    if len(questions) != num_questions:
+        return (
+            QuestionFault(-1, "question count does not match the quiz settings"),
+        )
+    faults: list[QuestionFault] = []
+    for index, question in enumerate(questions):
+        reason = question_fault(question, allowed_types=allowed_types, slices=slices)
+        if reason is not None:
+            faults.append(QuestionFault(index, reason))
+    return tuple(faults)
+
+
+def nothing_kept(
+    questions: Sequence[GeneratedQuestion],
+    faults: Sequence[QuestionFault],
+) -> bool:
+    """True when no question can be saved and the next call must rewrite the deck."""
+    if not faults:
+        return False
+    if any(fault.index < 0 for fault in faults):
+        return True
+    return len(faults) == len(questions)
+
+
+def validate_deck(
+    questions: Sequence[GeneratedQuestion],
+    *,
+    num_questions: int,
+    allowed_types: frozenset[QuestionType],
+    slices: Mapping[str, str],
+) -> None:
+    faults = faults_for(
+        questions,
+        num_questions=num_questions,
+        allowed_types=allowed_types,
+        slices=slices,
+    )
+    if faults:
+        raise QuizModelOutputError(faults[0].reason)
+
+
+def load_generated_questions(cleaned_json: str) -> tuple[GeneratedQuestion, ...]:
+    try:
+        payload = json.loads(cleaned_json)
+        deck = GeneratedDeck.model_validate(payload)
+    except (json.JSONDecodeError, ValidationError) as error:
+        logger.warning(f"quiz model output failed schema checks: {error}")
+        raise QuizModelOutputError("quiz JSON did not match the schema") from error
+    return deck.questions
+
+
+def merge_repaired(
+    questions: Sequence[GeneratedQuestion],
+    faults: Sequence[QuestionFault],
+    replacements: Sequence[GeneratedQuestion],
+) -> tuple[GeneratedQuestion, ...]:
+    """Put each replacement into the fault's index. Other questions stay."""
+    if len(replacements) != len(faults):
+        raise QuizModelOutputError("repair did not return the failing questions")
+    merged = list(questions)
+    for fault, replacement in zip(faults, replacements):
+        if fault.index < 0 or fault.index >= len(merged):
+            raise QuizModelOutputError("repair did not return the failing questions")
+        merged[fault.index] = replacement
+    return tuple(merged)
+
+
+def full_repair_prompt(original: str, error: str) -> str:
+    return (
+        f"{original}\n\nThe previous JSON failed validation: {error}\n"
+        "Return only the JSON object."
+    )
+
+
+def unusable_repair_prompt(
+    original: str,
+    questions: Sequence[GeneratedQuestion],
+    faults: Sequence[QuestionFault],
+) -> str:
+    """Full rewrite used only when no question from the last reply can be kept."""
+    reason = faults[0].reason if faults else "quiz JSON did not match the schema"
+    lines = [
+        full_repair_prompt(original, reason).rstrip(),
+        "",
+        "No question could be kept. Rewrite the whole quiz.",
+    ]
+    indexed = [fault for fault in faults if 0 <= fault.index < len(questions)]
+    if indexed:
+        for fault in indexed:
+            lines.append(f"Index {fault.index} failed: {fault.reason}")
+            lines.append(questions[fault.index].model_dump_json())
+    else:
+        for index, question in enumerate(questions):
+            lines.append(f"Index {index} could not be kept.")
+            lines.append(question.model_dump_json())
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def partial_repair_prompt(
+    original: str,
+    questions: Sequence[GeneratedQuestion],
+    faults: Sequence[QuestionFault],
+) -> str:
+    indexed = [fault for fault in faults if fault.index >= 0]
+    lines = [
+        original,
+        "",
+        "Rewrite only the failing questions below. "
+        f"Return a JSON object whose questions array has exactly {len(indexed)} "
+        "questions, in the listed order. "
+        "Do not include questions that already passed.",
+        "Return only the JSON object.",
+        "",
+    ]
+    for fault in indexed:
+        lines.append(f"Index {fault.index} failed: {fault.reason}")
+        lines.append(questions[fault.index].model_dump_json())
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _validate_generated_key(question: GeneratedQuestion) -> None:
@@ -480,13 +618,7 @@ def parse_generated(
     allowed_types: frozenset[QuestionType],
     slices: Mapping[str, str],
 ) -> tuple[GeneratedQuestion, ...]:
-    try:
-        payload = json.loads(cleaned_json)
-        deck = GeneratedDeck.model_validate(payload)
-    except (json.JSONDecodeError, ValidationError) as error:
-        logger.warning(f"quiz model output failed schema checks: {error}")
-        raise QuizModelOutputError("quiz JSON did not match the schema") from error
-    questions = deck.questions
+    questions = load_generated_questions(cleaned_json)
     validate_deck(
         questions,
         num_questions=num_questions,

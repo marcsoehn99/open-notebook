@@ -9,16 +9,25 @@ from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
+from open_notebook.ai.reasoning import ReasoningTask
 from open_notebook.domain.quiz import (
     QUIZ_PROMPT_TOKEN_LIMIT,
+    QUIZ_REPAIR_ROUNDS,
     GeneratedDeck,
     GeneratedQuestion,
+    QuestionType,
     QuizSettings,
     SealedQuestion,
     bloom_for,
-    parse_generated,
+    faults_for,
+    full_repair_prompt,
+    load_generated_questions,
+    merge_repaired,
+    nothing_kept,
+    partial_repair_prompt,
     seal_deck,
     template_data,
+    unusable_repair_prompt,
 )
 from open_notebook.exceptions import (
     OpenNotebookError,
@@ -51,6 +60,91 @@ async def _reply(model: BaseChatModel, prompt: str) -> str:
     return clean_thinking_content(extract_text_content(message.content))
 
 
+def _load_questions(
+    text: str,
+) -> tuple[tuple[GeneratedQuestion, ...] | None, QuizModelOutputError | None]:
+    try:
+        return load_generated_questions(text), None
+    except QuizModelOutputError as error:
+        return None, error
+
+
+async def _questions_with_repair(
+    model: BaseChatModel,
+    prompt: str,
+    *,
+    num_questions: int,
+    allowed_types: frozenset[QuestionType],
+    slices: dict[str, str],
+) -> tuple[GeneratedQuestion, ...]:
+    """Keep questions that pass. Rewrite only the failures, at most twice.
+
+    A reply that cannot be parsed, or that contains no keepable question, is
+    rewritten once as a whole deck. That rewrite counts as one of the two
+    repair rounds.
+    """
+    rounds = 0
+    full_rewrites = 0
+
+    async def ask(text: str) -> str:
+        _refuse_oversized(text)
+        return await _reply(model, text)
+
+    questions, error = _load_questions(await ask(prompt))
+    if questions is None:
+        rounds += 1
+        full_rewrites += 1
+        if error is None:
+            raise QuizModelOutputError("quiz JSON did not match the schema")
+        questions, error = _load_questions(
+            await ask(full_repair_prompt(prompt, str(error)))
+        )
+        if questions is None:
+            if error is None:
+                raise QuizModelOutputError("quiz JSON did not match the schema")
+            raise error
+
+    while rounds < QUIZ_REPAIR_ROUNDS:
+        faults = faults_for(
+            questions,
+            num_questions=num_questions,
+            allowed_types=allowed_types,
+            slices=slices,
+        )
+        if not faults:
+            return questions
+        rounds += 1
+        if nothing_kept(questions, faults):
+            if full_rewrites >= 1:
+                raise QuizModelOutputError(faults[0].reason)
+            full_rewrites += 1
+            questions, error = _load_questions(
+                await ask(unusable_repair_prompt(prompt, questions, faults))
+            )
+            if questions is None:
+                if error is None:
+                    raise QuizModelOutputError("quiz JSON did not match the schema")
+                raise error
+            continue
+        indexed = tuple(fault for fault in faults if fault.index >= 0)
+        repaired, error = _load_questions(
+            await ask(partial_repair_prompt(prompt, questions, indexed))
+        )
+        if repaired is None or len(repaired) != len(indexed):
+            continue
+        questions = merge_repaired(questions, indexed, repaired)
+
+    faults = faults_for(
+        questions,
+        num_questions=num_questions,
+        allowed_types=allowed_types,
+        slices=slices,
+    )
+    if faults:
+        raise QuizModelOutputError(faults[0].reason)
+    return questions
+
+
 async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
     del config
     settings = state["settings"]
@@ -72,27 +166,18 @@ async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
             prompt,
             state["model_id"],
             "transformation",
+            task=ReasoningTask.QUIZ,
             max_tokens=8192,
             structured={"type": "json"},
         )
 
-        async def _parsed(text: str) -> tuple[GeneratedQuestion, ...]:
-            return parse_generated(
-                text,
-                num_questions=settings.num_questions,
-                allowed_types=allowed,
-                slices=slices,
-            )
-
-        try:
-            questions = await _parsed(await _reply(model, prompt))
-        except QuizModelOutputError as error:
-            repair = (
-                f"{prompt}\n\nThe previous JSON failed validation: {error}\n"
-                "Return only the JSON object."
-            )
-            _refuse_oversized(repair)
-            questions = await _parsed(await _reply(model, repair))
+        questions = await _questions_with_repair(
+            model,
+            prompt,
+            num_questions=settings.num_questions,
+            allowed_types=allowed,
+            slices=slices,
+        )
         deck = seal_deck(questions, random.Random(), lambda: str(uuid.uuid4()))
         return {"deck": deck}
     except (ValueError, OpenNotebookError):
