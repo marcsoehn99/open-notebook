@@ -10,6 +10,9 @@ from typing import Tuple
 # Patterns for matching thinking content in AI responses
 # Standard pattern: <think>...</think>
 THINK_PATTERN = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+# Mistral thinking chunks use type "thinking". The v1 translator also says
+# "reasoning". Either one is reasoning, even when it also carries a text field.
+_DROPPED_PART_TYPES = frozenset({"thinking", "reasoning"})
 # Pattern for malformed output: content</think> (missing opening tag)
 THINK_PATTERN_NO_OPEN = re.compile(r"^(.*?)</think>", re.DOTALL)
 
@@ -132,6 +135,9 @@ def extract_text_content(content) -> str:
     (e.g. Gemini's envelope format):
     [{'type': 'text', 'text': '...', 'extras': {...}}]
 
+    Parts whose type is "thinking" or "reasoning" are dropped, including when
+    they also carry a text field. Nested text inside a thinking part is not read.
+
     Args:
         content: The content from an AI message, either a string or a list of parts.
 
@@ -145,8 +151,11 @@ def extract_text_content(content) -> str:
     if isinstance(content, list):
         text_parts = []
         for part in content:
-            if isinstance(part, dict) and "text" in part:
-                text_parts.append(part["text"])
+            if isinstance(part, dict):
+                if part.get("type") in _DROPPED_PART_TYPES:
+                    continue
+                if "text" in part:
+                    text_parts.append(part["text"])
             elif isinstance(part, str):
                 text_parts.append(part)
         return "".join(text_parts)
