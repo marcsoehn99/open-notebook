@@ -645,7 +645,7 @@ async def test_quiz_span_omits_thinking(
         "transformation",
         task=ReasoningTask.QUIZ,
     )
-    visible = await _reply(model, SOURCE_TEXT)
+    visible = await _reply(model, SOURCE_TEXT, timeout=None)
     assert visible == "Visible answer"
     blob = _assert_masked_span(client, exporter)
     assert "quiz" in blob
