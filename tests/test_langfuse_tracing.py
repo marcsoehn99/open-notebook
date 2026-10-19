@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from esperanto import AIFactory, LanguageModel
+from esperanto import LanguageModel
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -555,10 +555,32 @@ def recorded_spans(
     yield _span_client, _span_exporter
 
 
+@dataclass
+class _ScriptedLanguage(LanguageModel):
+    """Language model whose LangChain object is ScriptedChat. It never opens HTTP."""
+
+    @property
+    def provider(self) -> str:
+        return "anthropic"
+
+    def _get_default_model(self) -> str:
+        return "claude-sonnet-5"
+
+    def _get_models(self) -> list[object]:
+        return []
+
+    def to_langchain(self) -> ScriptedChat:
+        return ScriptedChat()
+
+    def chat_complete(self, *args: object, **kwargs: object) -> object:
+        raise AssertionError("chat_complete must not call a provider")
+
+    async def achat_complete(self, *args: object, **kwargs: object) -> object:
+        raise AssertionError("achat_complete must not call a provider")
+
+
 def _patch_scripted_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    language_model = AIFactory.create_language(
-        "anthropic", "claude-sonnet-5", config={"api_key": "test"}
-    )
+    language_model = _ScriptedLanguage(model_name="claude-sonnet-5")
 
     async def get_model(*args: object, **kwargs: object) -> LanguageModel:
         del args, kwargs
@@ -567,9 +589,6 @@ def _patch_scripted_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("open_notebook.ai.provision.model_manager.get_model", get_model)
     monkeypatch.setattr(
         "open_notebook.ai.provision.model_manager.get_default_model", get_model
-    )
-    monkeypatch.setattr(
-        type(language_model), "to_langchain", lambda self: ScriptedChat()
     )
 
 

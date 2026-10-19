@@ -17,16 +17,18 @@ npm run test:watch        # watch mode
 npm run test:coverage     # what CI runs
 ```
 
-The backend suite needs **no running SurrealDB, worker or AI provider**. CI runs it with nothing but `uv sync`. SurrealDB access, models and HTTP requests are mocked; a few tests use in-memory substitutes instead (for example an in-memory `SqliteSaver` in `tests/test_empty_model_reply.py`).
+The backend suite needs **no running SurrealDB, worker or AI provider**. CI runs it with nothing but `uv sync`. SurrealDB access, models and HTTP requests are mocked. `tests/conftest.py` rejects an external `connect` or `connect_ex` with `ExternalNetworkDenied`, and it still allows `127.0.0.1`, `::1`, `localhost`, and Unix sockets. Provider keys are removed from the environment, and the repo `.env` is not loaded. A few tests use in-memory substitutes instead (for example an in-memory `SqliteSaver` in `tests/test_empty_model_reply.py`).
 
 ## Backend layout (`tests/`)
 
 `tests/` is flat: one `test_<topic>.py` per feature or regression (about 70 files), for example `test_sources_api.py`, `test_credentials_api.py`, `test_ask_graph.py`, `test_crud_404.py`. There are no `unit/` or `integration/` subfolders. Name a new file after what it covers, or add to the existing file for that area.
 
-`tests/conftest.py` has no shared fixtures. It only:
+`tests/conftest.py`:
 
 - sets `OPEN_NOTEBOOK_PASSWORD=""` before anything is imported, so the auth middleware is disabled in tests;
-- loads the repo's `.env` if it exists;
+- sets `PYTHON_DOTENV_DISABLED=1`, so `load_dotenv` does not read the repo `.env`, including the call in `api/main.py`;
+- blocks an external `socket.connect` or `connect_ex` with `ExternalNetworkDenied`, and still allows `127.0.0.1`, `::1`, `localhost`, and Unix sockets;
+- deletes provider key names (`*_API_KEY`, `*_API_TOKEN`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and the AWS and Google credential names) before each test;
 - puts the repo root on `sys.path`.
 
 pytest-asyncio runs in its default (strict) mode, so async tests need `@pytest.mark.asyncio`.
@@ -82,4 +84,4 @@ Vitest runs in `jsdom` with globals enabled and the `@/` alias (`frontend/vitest
 
 - A bug fix comes with a test that fails without the fix. Name it after the behavior (`test_delete_notebook_missing_returns_404`) and reference the issue in the docstring.
 - API changes: status codes, validation errors and the error mapping, not only the happy path.
-- Don't test third-party libraries (Esperanto, content-core, LangGraph) or make real provider calls.
+- Don't test third-party libraries (Esperanto, content-core, LangGraph) or make real provider calls. An external socket attempt raises `ExternalNetworkDenied`. Loopback and Unix sockets stay usable. If a test hits the guard, mock the call that opened the socket. Leave the allow list alone.
