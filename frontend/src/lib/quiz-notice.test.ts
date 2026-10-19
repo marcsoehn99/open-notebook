@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { enUS } from '@/lib/locales/en-US'
 import {
   announceQuizRunning,
+  dismissQuizNotice,
   getQuizOpenSnapshot,
   installQuizNoticeDeps,
   quizNoticeStorageKey,
@@ -56,7 +57,7 @@ describe('quiz notice', () => {
   it('shows the background sentence before any status request', () => {
     announceQuizRunning(notice.notebookId, enUS.quiz.noticeBackground)
     expect(toast.info).toHaveBeenCalledWith(enUS.quiz.noticeBackground, {
-      id: 'quiz-notice:notebook:1',
+      id: 'quiz-notice:pending:notebook:1',
       duration: Infinity,
     })
   })
@@ -75,7 +76,7 @@ describe('quiz notice', () => {
     expect(toast.info).toHaveBeenCalledWith(
       notice.ready,
       expect.objectContaining({
-        id: 'quiz-notice:notebook:1',
+        id: 'quiz-notice:quiz:1',
         duration: Infinity,
         action: expect.objectContaining({ label: notice.openLabel }),
       })
@@ -94,7 +95,7 @@ describe('quiz notice', () => {
     })
   })
 
-  it('ignores a finished poll after a newer quiz replaced it', async () => {
+  it('keeps the first quiz notice when a second quiz starts', async () => {
     let finishFirst: (value: { status: string }) => void = () => {}
     const get = vi
       .fn()
@@ -119,13 +120,17 @@ describe('quiz notice', () => {
     const readyCalls = vi
       .mocked(toast.info)
       .mock.calls.filter((call) => call[0] === notice.ready)
-    expect(readyCalls).toHaveLength(1)
-    const options = readyCalls[0][1]
-    if (!options?.action || typeof options.action !== 'object' || !('onClick' in options.action)) {
+    expect(readyCalls.map((call) => call[1]?.id)).toEqual([
+      'quiz-notice:quiz:2',
+      'quiz-notice:quiz:1',
+    ])
+    const first = readyCalls.find((call) => call[1]?.id === 'quiz-notice:quiz:1')
+    if (!first?.[1]?.action || typeof first[1].action !== 'object' || !('onClick' in first[1].action)) {
       throw new Error('ready notice has no action')
     }
-    options.action.onClick({} as never)
-    expect(getQuizOpenSnapshot().request?.quizId).toBe('quiz:2')
+    first[1].action.onClick({} as never)
+    expect(getQuizOpenSnapshot().request?.quizId).toBe('quiz:1')
+    expect(storedQuizIds()).toEqual(['quiz:2'])
   })
 
   it('keeps waiting while the quiz is still running', async () => {
@@ -159,7 +164,7 @@ describe('quiz notice', () => {
     await flush()
 
     expect(toast.error).toHaveBeenCalledWith(notice.failed, {
-      id: 'quiz-notice:notebook:1',
+      id: 'quiz-notice:quiz:1',
       duration: Infinity,
     })
     expect(delay).not.toHaveBeenCalled()
@@ -191,7 +196,7 @@ describe('quiz notice', () => {
     expect(storedQuizIds()).not.toContain('quiz:1')
   })
 
-  it('keeps the latest stored quiz when one notebook has two jobs', async () => {
+  it('resumes every stored quiz in one notebook', async () => {
     localStorage.setItem(
       quizNoticeStorageKey,
       JSON.stringify({
@@ -208,9 +213,64 @@ describe('quiz notice', () => {
     resumeQuizNotices(noticeCopy())
     await flush()
 
-    expect(get).toHaveBeenCalledTimes(1)
-    expect(get).toHaveBeenCalledWith('quiz:2')
-    expect(storedQuizIds()).toEqual(['quiz:2'])
+    expect(get.mock.calls.map((call) => call[0])).toEqual(['quiz:1', 'quiz:2'])
+    expect(storedQuizIds()).toEqual(['quiz:1', 'quiz:2'])
+  })
+
+  it('stops polling after five status errors and drops the quiz', async () => {
+    const get = vi.fn().mockRejectedValue(new Error('offline'))
+    const delay = vi.fn().mockResolvedValue(undefined)
+    installQuizNoticeDeps({ get, delay })
+
+    watchQuizJob(notice)
+    await flush()
+
+    expect(get).toHaveBeenCalledTimes(5)
+    expect(delay).toHaveBeenCalledTimes(4)
+    expect(toast.error).toHaveBeenCalledWith(notice.failed, {
+      id: 'quiz-notice:quiz:1',
+      duration: Infinity,
+    })
+    expect(storedQuizIds()).not.toContain('quiz:1')
+  })
+
+  it('resets the error count after a successful status check', async () => {
+    const get = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ status: 'completed' })
+    installQuizNoticeDeps({
+      get,
+      delay: vi.fn().mockResolvedValue(undefined),
+    })
+
+    watchQuizJob(notice)
+    await flush()
+
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(toast.info).toHaveBeenCalledWith(
+      notice.ready,
+      expect.objectContaining({ id: 'quiz-notice:quiz:1' })
+    )
+    expect(storedQuizIds()).toEqual(['quiz:1'])
+  })
+
+  it('does not drop another quiz when a create is dismissed', async () => {
+    installQuizNoticeDeps({
+      get: vi.fn().mockResolvedValue({ status: 'completed' }),
+      delay: vi.fn().mockResolvedValue(undefined),
+    })
+    watchQuizJob(notice)
+    await flush()
+
+    announceQuizRunning(notice.notebookId, enUS.quiz.noticeBackground)
+    dismissQuizNotice(notice.notebookId)
+
+    expect(toast.dismiss).toHaveBeenCalledWith('quiz-notice:pending:notebook:1')
+    expect(storedQuizIds()).toEqual(['quiz:1'])
   })
 
   it('ignores corrupt notice storage', () => {
@@ -244,7 +304,7 @@ describe('quiz notice', () => {
     expect(freshToast.toast.info).toHaveBeenCalledWith(
       notice.ready,
       expect.objectContaining({
-        id: 'quiz-notice:notebook:1',
+        id: 'quiz-notice:quiz:1',
         duration: Infinity,
         action: expect.objectContaining({ label: notice.openLabel }),
       })
@@ -280,7 +340,7 @@ describe('quiz notice', () => {
     expect(freshToast.toast.info).toHaveBeenCalledWith(
       enUS.quiz.noticeBackground,
       expect.objectContaining({
-        id: 'quiz-notice:notebook:9',
+        id: 'quiz-notice:quiz:9',
         duration: Infinity,
       })
     )

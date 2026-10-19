@@ -81,7 +81,7 @@ describe('QuizDialog start', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('quiz.noticeBackground')
     expect(toast.info).toHaveBeenCalledWith('quiz.noticeBackground', {
-      id: 'quiz-notice:notebook:n1',
+      id: 'quiz-notice:pending:notebook:n1',
       duration: Infinity,
     })
     expect(quizzesApi.create).toHaveBeenCalledTimes(1)

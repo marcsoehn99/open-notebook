@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Development:** `architecture.md`, `testing.md`, `api-reference.md` and `code-standards.md` are rewritten from the code. A new playbook covers adding an AI provider. Dev setup lives on one page. The AGENTS files agree with the docs. Contributor conventions (Conventional Commits, CHANGELOG sections, pre-PR checks that match CI) are documented
 
 ### Fixed
+- **Quiz notice polling stops after repeated errors.** Five failed status checks in a row show the error notice and forget that quiz. A second quiz in the same notebook keeps its own notice.
 - **A quiz model call stops at the time left in the job.** Each quiz call waits at most until the 6 minute deadline, and the client makes one HTTP attempt. `ESPERANTO_LLM_TIMEOUT` (180 seconds by default) is the limit for that attempt.
 - **Quiz repair keeps the quiz settings.** A repair still asks only for the failing questions, or for the whole deck when nothing can be kept. The prompt carries the language, difficulty, allowed question types, topic, and the rule that a quote is a verbatim slice of at least 15 characters. A full rewrite also keeps the requested question count.
 - **Langfuse traces keep the prompt and leave out thinking text.** If the thinking mask cannot be installed, the log records a warning instead of staying silent. `<think>` tags are removed only from assistant messages. A source that quotes a stray `</think>` stays intact in the trace. Thinking blocks are still removed from every message.

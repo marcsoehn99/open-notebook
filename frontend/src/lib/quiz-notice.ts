@@ -45,7 +45,8 @@ export const quizNoticeStorageKey = 'open-notebook-quiz-notice'
 
 const emptySnapshot: Snapshot = { request: null }
 const listeners = new Set<() => void>()
-const generationByNotebook = new Map<string, number>()
+const generationByQuiz = new Map<string, number>()
+const pollErrorBudget = 5
 const toastEpochByKey = new Map<string, number>()
 
 let snapshot: Snapshot = emptySnapshot
@@ -59,8 +60,12 @@ const defaultDeps: WatchDeps = {
 
 let deps = defaultDeps
 
-function noticeToastId(notebookId: string) {
-  return `quiz-notice:${notebookId}`
+function noticeToastId(quizId: string) {
+  return `quiz-notice:${quizId}`
+}
+
+function pendingToastId(notebookId: string) {
+  return `quiz-notice:pending:${notebookId}`
 }
 
 function browserStorage(): Storage | null {
@@ -118,17 +123,22 @@ function writeJobs(jobs: QuizJob[]) {
 }
 
 function putJob(job: QuizJob) {
-  const jobs = readJobs().filter((existing) => existing.notebookId !== job.notebookId)
+  const jobs = readJobs().filter((existing) => existing.quizId !== job.quizId)
   jobs.push(job)
   writeJobs(jobs)
 }
 
 function forgetJob(job: QuizJob) {
-  const id = noticeToastId(job.notebookId)
+  const id = noticeToastId(job.quizId)
   toastEpochByKey.set(id, (toastEpochByKey.get(id) ?? 0) + 1)
-  generationByNotebook.set(job.notebookId, (generationByNotebook.get(job.notebookId) ?? 0) + 1)
+  generationByQuiz.set(job.quizId, (generationByQuiz.get(job.quizId) ?? 0) + 1)
   writeJobs(readJobs().filter((existing) => existing.quizId !== job.quizId))
   toast.dismiss(id)
+}
+
+function reportFailure(job: QuizJob, failed: string) {
+  forgetJob(job)
+  toast.error(failed, { id: noticeToastId(job.quizId), duration: Infinity })
 }
 
 function armDismiss(job: QuizJob, toastKey: string) {
@@ -143,7 +153,7 @@ function armDismiss(job: QuizJob, toastKey: string) {
 }
 
 function showRunningNotice(job: QuizJob, running: string) {
-  const id = noticeToastId(job.notebookId)
+  const id = noticeToastId(job.quizId)
   const onDismiss = armDismiss(job, id)
   toast.info(running, {
     id,
@@ -154,7 +164,7 @@ function showRunningNotice(job: QuizJob, running: string) {
 }
 
 function showReadyNotice(job: QuizJob, ready: string, openLabel: string) {
-  const id = noticeToastId(job.notebookId)
+  const id = noticeToastId(job.quizId)
   const onDismiss = armDismiss(job, id)
   toast.info(ready, {
     id,
@@ -173,23 +183,35 @@ function emit(next: Snapshot) {
   for (const listener of listeners) listener()
 }
 
-function stillCurrent(notebookId: string, generation: number, ticket: number) {
-  return ticket === session && generationByNotebook.get(notebookId) === generation
+function stillCurrent(quizId: string, generation: number, ticket: number) {
+  return ticket === session && generationByQuiz.get(quizId) === generation
 }
 
-async function poll(input: WatchInput, generation: number, ticket: number) {
-  if (!stillCurrent(input.notebookId, generation, ticket)) return
+async function poll(input: WatchInput, generation: number, ticket: number, errors = 0) {
+  if (!stillCurrent(input.quizId, generation, ticket)) return
 
   let status: string | undefined
+  let threw = false
   try {
     status = (await deps.get(input.quizId)).status
   } catch {
-    status = undefined
+    threw = true
   }
 
-  if (!stillCurrent(input.notebookId, generation, ticket)) return
+  if (!stillCurrent(input.quizId, generation, ticket)) return
 
   const job = { quizId: input.quizId, notebookId: input.notebookId }
+
+  if (threw) {
+    const nextErrors = errors + 1
+    if (nextErrors >= pollErrorBudget) {
+      reportFailure(job, input.failed)
+      return
+    }
+    const wait = quizRefetchIntervalMs(undefined)
+    await deps.delay(wait === false ? 2000 : wait)
+    return poll(input, generation, ticket, nextErrors)
+  }
 
   if (status === 'completed') {
     showReadyNotice(job, input.ready, input.openLabel)
@@ -197,55 +219,50 @@ async function poll(input: WatchInput, generation: number, ticket: number) {
   }
 
   if (status === 'failed') {
-    forgetJob(job)
-    toast.error(input.failed, { id: noticeToastId(input.notebookId), duration: Infinity })
+    reportFailure(job, input.failed)
     return
   }
 
   const wait = quizRefetchIntervalMs(status)
   await deps.delay(wait === false ? 2000 : wait)
-  return poll(input, generation, ticket)
+  return poll(input, generation, ticket, 0)
 }
 
 async function adopt(job: QuizJob, copy: QuizNoticeCopy, generation: number, ticket: number) {
   let status: string | undefined
+  let threw = false
   try {
     status = (await deps.get(job.quizId)).status
   } catch {
-    status = undefined
+    threw = true
   }
 
-  if (!stillCurrent(job.notebookId, generation, ticket)) return
+  if (!stillCurrent(job.quizId, generation, ticket)) return
 
-  if (status === 'completed') {
+  const input: WatchInput = {
+    notebookId: job.notebookId,
+    quizId: job.quizId,
+    ready: copy.ready,
+    openLabel: copy.openLabel,
+    failed: copy.failed,
+  }
+
+  if (!threw && status === 'completed') {
     showReadyNotice(job, copy.ready, copy.openLabel)
     return
   }
 
-  if (status === 'failed') {
-    forgetJob(job)
-    toast.error(copy.failed, { id: noticeToastId(job.notebookId), duration: Infinity })
+  if (!threw && status === 'failed') {
+    reportFailure(job, copy.failed)
     return
   }
 
   showRunningNotice(job, copy.running)
-  return poll(
-    {
-      notebookId: job.notebookId,
-      quizId: job.quizId,
-      ready: copy.ready,
-      openLabel: copy.openLabel,
-      failed: copy.failed,
-    },
-    generation,
-    ticket,
-  )
-}
+  if (!threw) return poll(input, generation, ticket, 0)
 
-function collapseToLatestPerNotebook(jobs: QuizJob[]) {
-  const byNotebook = new Map<string, QuizJob>()
-  for (const job of jobs) byNotebook.set(job.notebookId, job)
-  return [...byNotebook.values()]
+  const wait = quizRefetchIntervalMs(undefined)
+  await deps.delay(wait === false ? 2000 : wait)
+  return poll(input, generation, ticket, 1)
 }
 
 export function subscribeQuizOpen(listener: () => void) {
@@ -267,7 +284,7 @@ export function installQuizNoticeDeps(next: WatchDeps | null) {
 
 export function resetQuizNotice() {
   session += 1
-  generationByNotebook.clear()
+  generationByQuiz.clear()
   toastEpochByKey.clear()
   navigator = null
   snapshot = emptySnapshot
@@ -296,32 +313,28 @@ export function clearQuizOpenRequest() {
 }
 
 export function announceQuizRunning(notebookId: string, message: string) {
-  toast.info(message, { id: noticeToastId(notebookId), duration: Infinity })
+  toast.info(message, { id: pendingToastId(notebookId), duration: Infinity })
 }
 
 export function dismissQuizNotice(notebookId: string) {
-  generationByNotebook.set(notebookId, (generationByNotebook.get(notebookId) ?? 0) + 1)
-  toast.dismiss(noticeToastId(notebookId))
-  writeJobs(readJobs().filter((job) => job.notebookId !== notebookId))
+  toast.dismiss(pendingToastId(notebookId))
 }
 
 export function watchQuizJob(input: WatchInput) {
   const job = { quizId: input.quizId, notebookId: input.notebookId }
   putJob(job)
-  const generation = (generationByNotebook.get(input.notebookId) ?? 0) + 1
-  generationByNotebook.set(input.notebookId, generation)
+  toast.dismiss(pendingToastId(input.notebookId))
+  const generation = (generationByQuiz.get(input.quizId) ?? 0) + 1
+  generationByQuiz.set(input.quizId, generation)
   if (input.running) showRunningNotice(job, input.running)
   void poll(input, generation, session)
 }
 
 export function resumeQuizNotices(copy: QuizNoticeCopy) {
-  const jobs = readJobs()
-  const collapsed = collapseToLatestPerNotebook(jobs)
-  if (collapsed.length !== jobs.length) writeJobs(collapsed)
-  for (const job of collapsed) {
-    if (generationByNotebook.has(job.notebookId)) continue
-    const generation = (generationByNotebook.get(job.notebookId) ?? 0) + 1
-    generationByNotebook.set(job.notebookId, generation)
+  for (const job of readJobs()) {
+    if (generationByQuiz.has(job.quizId)) continue
+    const generation = (generationByQuiz.get(job.quizId) ?? 0) + 1
+    generationByQuiz.set(job.quizId, generation)
     void adopt(job, copy, generation, session)
   }
 }
