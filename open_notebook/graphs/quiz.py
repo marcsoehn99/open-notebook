@@ -308,6 +308,8 @@ async def _questions_with_repair(
         if not faults:
             return questions
         if budget.rounds >= QUIZ_REPAIR_ROUNDS:
+            if kept:
+                return tuple(kept)
             raise QuizModelOutputError(faults[0].reason)
         if budget.out_of_time(_now()):
             if kept:

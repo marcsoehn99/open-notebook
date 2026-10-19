@@ -207,35 +207,33 @@ async def test_valid_deck_is_not_sent_again(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.asyncio
-async def test_failing_repair_stops_after_two_rounds(
+async def test_exhausted_repair_returns_the_shorter_deck(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     good = _question("Name the city.", GOOD_QUOTE)
     bad = _question("Name the river.", BAD_QUOTE)
-    model = _ScriptedModel([_deck(good, bad), _deck(bad), _deck(bad)])
-
-    async def _provision(*args: object, **kwargs: object) -> _ScriptedModel:
-        return model
-
-    monkeypatch.setattr(
-        "open_notebook.graphs.quiz.provision_langchain_model",
-        _provision,
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        [_deck(good, bad), _deck(bad), _deck(bad)],
     )
+    assert len(prompts) == 3
+    assert "exactly 1" in prompts[1]
+    assert "exactly 1" in prompts[2]
+    assert "Do not repeat these stems" in prompts[1]
+    assert "Do not repeat these stems" in prompts[2]
+    assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+@pytest.mark.asyncio
+async def test_exhausted_repair_fails_when_no_question_is_valid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bad_city = _question("Name the city.", BAD_QUOTE)
+    bad_river = _question("Name the river.", BAD_QUOTE)
+    model = _ScriptedModel([_deck(bad_city, bad_river), _deck(bad_city, bad_river)])
     with pytest.raises(QuizModelOutputError):
-        await generate_node(
-            {
-                "quiz_id": "quiz:1",
-                "model_id": "model:1",
-                "slices": {SOURCE: SLICE},
-                "settings": _settings(),
-            },
-            {},
-        )
-    assert len(model.prompts) == 3
-    assert "exactly 1" in model.prompts[1]
-    assert "exactly 1" in model.prompts[2]
-    assert "Do not repeat these stems" in model.prompts[1]
-    assert "Do not repeat these stems" in model.prompts[2]
+        await _run(monkeypatch, [], model=model)
+    assert len(model.prompts) == 2
 
 
 @pytest.mark.asyncio
