@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
+import httpx
 from ai_prompter import Prompter
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers.pydantic import PydanticOutputParser
@@ -133,7 +134,7 @@ def _make_ask(model: BaseChatModel, budget: RepairBudget) -> Ask:
         started = _now()
         try:
             reply = await _reply(model, text, timeout=_call_timeout(budget))
-        except TimeoutError as error:
+        except (TimeoutError, httpx.TimeoutException) as error:
             raise QuizTimeoutError("quiz generation timed out") from error
         budget.note_call(_now() - started)
         return reply
@@ -308,6 +309,8 @@ async def _questions_with_repair(
         if not faults:
             return questions
         if budget.rounds >= QUIZ_REPAIR_ROUNDS:
+            if kept:
+                return tuple(kept)
             raise QuizModelOutputError(faults[0].reason)
         if budget.out_of_time(_now()):
             if kept:
@@ -356,7 +359,7 @@ async def _questions_with_repair(
             if kept:
                 logger.warning(
                     "quiz repair skipped: "
-                    "the model call reached the job deadline. "
+                    "the model call ran out of time. "
                     f"Keeping {len(kept)} valid question(s)."
                 )
                 return tuple(kept)
