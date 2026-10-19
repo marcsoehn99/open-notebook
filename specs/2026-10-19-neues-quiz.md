@@ -10,7 +10,7 @@ In einer Session mit vorhandenem Quiz legst du mit einem Klick ein neues Quiz an
 4. Ein älteres Quiz aus der Liste wieder öffnen.
 
 ## Akzeptanzkriterien
-1. Auf dem Ergebnis-Bildschirm und während eines Quiz gibt es den Knopf „Neues Quiz“. Er öffnet das leere Formular.
+1. Auf dem Ergebnis-Bildschirm und während eines Quiz gibt es den Knopf „Neues Quiz“. Er öffnet das Formular mit den Startwerten, nichts wird vom alten Quiz übernommen.
 2. Ein neues Quiz überschreibt kein altes. Nach zwei erzeugten Quizzen sind beide noch vorhanden.
 3. Schließt man das Quiz-Fenster und öffnet es wieder, sieht man das zuletzt erzeugte Quiz und den Knopf „Neues Quiz“.
 4. Das Quiz-Fenster zeigt eine Liste aller bisherigen Quizze des Notizbuchs. Ein Klick auf einen Eintrag öffnet das Quiz zum Wiederholen oder Lesen.
