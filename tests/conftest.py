@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+# python-dotenv skips load_dotenv while this is set, including api/main.py.
+os.environ["PYTHON_DOTENV_DISABLED"] = "1"
 # Empty string, not unset, so a later load cannot turn password auth back on.
 os.environ["OPEN_NOTEBOOK_PASSWORD"] = ""
 
@@ -59,21 +61,30 @@ def _install_network_guard() -> None:
 
 _install_network_guard()
 
-# Load environment variables from .env file
-# This must be done BEFORE any imports that depend on environment variables
-from dotenv import load_dotenv
-
-# Load .env file from project root
-dotenv_path = Path(__file__).parent.parent / ".env"
-if dotenv_path.exists():
-    load_dotenv(dotenv_path)
-    print(f"Loaded environment variables from {dotenv_path}")
-else:
-    print(f"Warning: .env file not found at {dotenv_path}")
+_SECRET_SUFFIXES = ("_API_KEY", "_API_TOKEN")
+_SECRET_NAMES = frozenset(
+    {
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+    }
+)
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+
+def _is_provider_secret(name: str) -> bool:
+    return name.endswith(_SECRET_SUFFIXES) or name in _SECRET_NAMES
+
+
+def _strip_provider_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in list(os.environ):
+        if _is_provider_secret(name):
+            monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -81,3 +92,8 @@ def _block_external_network() -> Iterator[None]:
     _install_network_guard()
     yield
     _install_network_guard()
+
+
+@pytest.fixture(autouse=True)
+def _clear_provider_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    _strip_provider_secrets(monkeypatch)
