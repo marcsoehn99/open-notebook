@@ -6,3 +6,4 @@
 - [erledigt 040dc0c] Q-P1 (niedrig): Listenlabel zeigte rohe Quiz-ID bei gleichen Einstellungen. Jetzt „Quiz N · …“, ältestes = Quiz 1.
 - [erledigt 340b462] Q-P3: Spec sagte "leeres Formular", gebaut sind Startwerte (5 Fragen, mittel, alle Quellen). Kriterium 1 nennt jetzt die Startwerte (von Marc bestätigt).
 - Test-Umgebung: vitest unter Node 26 braucht --localstorage-file, sonst bricht quiz-notice.test.ts ab ("reading 'getItem'"). Setup sollte das selbst abfangen.
+- Sicherheit (19.10.): Laut quiz-liste-Lauf startet `cursor-agent --force` im Modus "Run Everything"; prüfen, ob die deny-Liste in ~/.cursor/cli-config.json dann noch greift (harmloser Test mit gesperrtem Befehl), bevor der nächste --force-Bau startet.
