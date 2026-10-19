@@ -13,6 +13,12 @@ _EXTERNAL_V4 = ("1.1.1.1", 443)
 _EXTERNAL_V6 = ("2001:db8::1", 9, 0, 0)
 
 
+def test_token_count_stays_offline() -> None:
+    from open_notebook.utils.token_utils import token_count
+
+    assert token_count("one two three four five") > 0
+
+
 def test_external_create_connection_raises() -> None:
     with pytest.raises(ExternalNetworkDenied) as denied:
         socket.create_connection(_EXTERNAL_V4, timeout=0.2)

@@ -77,6 +77,23 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
+def _block_tiktoken_download() -> None:
+    """The encoding file is not in the repo. Tests use the offline token-count fallback."""
+    import tiktoken.load as tiktoken_load
+
+    real_read_file = tiktoken_load.read_file
+
+    def read_file(blobpath: str) -> bytes:
+        if str(blobpath).startswith(("http://", "https://")):
+            raise OSError("tiktoken encoding download is blocked in tests")
+        return real_read_file(blobpath)
+
+    tiktoken_load.read_file = read_file
+
+
+_block_tiktoken_download()
+
+
 def _is_provider_secret(name: str) -> bool:
     return name.endswith(_SECRET_SUFFIXES) or name in _SECRET_NAMES
 
