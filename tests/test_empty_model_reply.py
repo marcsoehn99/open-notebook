@@ -56,7 +56,7 @@ def test_notebook_chat_node_keeps_nonempty_reply():
         new=AsyncMock(return_value=_sync_model_returning("<think>x</think>hello")),
     ):
         result = call_model_with_messages(state, {"configurable": {}})  # type: ignore[arg-type]
-    assert result["messages"].content == "hello"
+    assert result["messages"].content == "<think>x</think>hello"
 
 
 @pytest.mark.parametrize("reply", EMPTY_REPLIES)

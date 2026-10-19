@@ -35,7 +35,7 @@ Normative rules for working on the Python backend. Architecture and design ratio
       exc_class, message = classify_error(e)
       raise exc_class(message) from e
   ```
-- Strip extended-thinking output with `clean_thinking_content()` before using model responses.
+- Strip extended thinking with `clean_thinking_content()` before text is shown, saved, or parsed. Notebook chat checkpoints the original assistant message so the next turn can replay thinking chunks. The chat API still returns the stripped answer.
 - Chat checkpoints (SqliteSaver) live at `./data/sqlite-db/checkpoints.sqlite` — `LANGGRAPH_CHECKPOINT_FILE` in `open_notebook/config.py` is a constant, not an env var.
 
 ## Domain (`open_notebook/domain/`)

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Source
+from open_notebook.utils.text_utils import clean_thinking_content, extract_text_content
 
 
 # Shared response models
@@ -79,6 +80,20 @@ async def get_verified_source_session(
     return full_source_id, source, full_session_id, session
 
 
+def _api_message_content(msg: Any) -> str:
+    """Text the notebook shows and saves.
+
+    Notebook chat checkpoints the original assistant message, including
+    thinking chunks, because that message is what the next turn sends back
+    to the model. This projection is the answer without those chunks.
+    """
+    raw = msg.content if hasattr(msg, "content") else str(msg)
+    kind = msg.type if hasattr(msg, "type") else ""
+    if kind in {"ai", "assistant"}:
+        return clean_thinking_content(extract_text_content(raw))
+    return raw
+
+
 def extract_chat_messages(raw_messages: Iterable[Any]) -> List[ChatMessage]:
     """Convert LangGraph/LangChain state messages into `ChatMessage` models."""
     messages: List[ChatMessage] = []
@@ -87,7 +102,7 @@ def extract_chat_messages(raw_messages: Iterable[Any]) -> List[ChatMessage]:
             ChatMessage(
                 id=getattr(msg, "id", f"msg_{len(messages)}"),
                 type=msg.type if hasattr(msg, "type") else "unknown",
-                content=msg.content if hasattr(msg, "content") else str(msg),
+                content=_api_message_content(msg),
                 timestamp=None,  # LangChain messages don't have timestamps by default
             )
         )

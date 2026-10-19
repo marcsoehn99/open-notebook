@@ -78,19 +78,18 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
 
         ai_message = model.invoke(payload)
 
-        # Clean thinking content from AI response (e.g., <think>...</think> tags)
-        content = extract_text_content(ai_message.content)
-        cleaned_content = clean_thinking_content(content)
-        if not cleaned_content.strip():
+        # The checkpoint is the next request. Replay must keep thinking chunks.
+        # The chat API strips them before the notebook shows or saves the answer.
+        visible = clean_thinking_content(extract_text_content(ai_message.content))
+        if not visible.strip():
             # Raising inside the node keeps LangGraph from checkpointing a
             # blank AI message that would be replayed as context later.
             raise IncompleteGenerationError(
                 "The model returned an empty response. Try again, or pick a "
                 "different model if this keeps happening."
             )
-        cleaned_message = ai_message.model_copy(update={"content": cleaned_content})
 
-        return {"messages": cleaned_message}
+        return {"messages": ai_message}
     except OpenNotebookError:
         raise
     except Exception as e:
