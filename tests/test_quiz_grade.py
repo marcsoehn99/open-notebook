@@ -25,6 +25,7 @@ from open_notebook.domain.quiz import (
     SealedShort,
     ShortSubmission,
     StoredAnswer,
+    bloom_for,
     grade_one,
     merge_answer,
     parse_generated,
@@ -32,6 +33,7 @@ from open_notebook.domain.quiz import (
     progress_for,
     quote_is_verbatim,
     seal_deck,
+    template_data,
     to_prompt,
     truncate_slices,
 )
@@ -443,8 +445,30 @@ def test_router_does_not_name_sealed_or_generated_types():
 
 
 def test_prompt_template_reads_question_types():
-    text = (ROOT / "prompts/quiz/generate.jinja").read_text()
-    assert "QUESTION_TYPES" in text
+    from ai_prompter import Prompter
+
+    generate = (ROOT / "prompts/quiz/generate.jinja").read_text()
+    rules = (ROOT / "prompts/quiz/rules.jinja").read_text()
+    assert '{% include "quiz/rules.jinja" %}' in generate
+    assert "QUESTION_TYPES" in rules
+    settings = parse_settings(
+        source_ids=["source:1"],
+        num_questions=1,
+        difficulty="medium",
+        topic_prompt=None,
+        question_types=["short"],
+        language="en",
+        model_id="model:1",
+    )
+    rendered = Prompter(prompt_template="quiz/generate").render(
+        data=template_data(
+            settings,
+            {"source:1": "A source sentence here."},
+            bloom_for(settings.difficulty),
+        )
+    )
+    for name in QUESTION_TYPES:
+        assert name in rendered
 
 
 @pytest.mark.asyncio
