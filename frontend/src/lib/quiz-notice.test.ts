@@ -6,8 +6,10 @@ import {
   announceQuizRunning,
   getQuizOpenSnapshot,
   installQuizNoticeDeps,
+  quizNoticeStorageKey,
   registerQuizNavigator,
   resetQuizNotice,
+  resumeQuizNotices,
   watchQuizJob,
 } from '@/lib/quiz-notice'
 
@@ -161,5 +163,153 @@ describe('quiz notice', () => {
       duration: Infinity,
     })
     expect(delay).not.toHaveBeenCalled()
+    expect(storedQuizIds()).not.toContain('quiz:1')
+  })
+
+  it('removes the stored job when the ready notice is opened or closed', async () => {
+    installQuizNoticeDeps({
+      get: vi.fn().mockResolvedValue({ status: 'completed' }),
+      delay: vi.fn().mockResolvedValue(undefined),
+    })
+
+    watchQuizJob(notice)
+    await flush()
+    expect(storedQuizIds()).toEqual(['quiz:1'])
+
+    const opened = lastInfoOptions()
+    if (!opened.action || typeof opened.action !== 'object' || !('onClick' in opened.action)) {
+      throw new Error('ready notice has no action')
+    }
+    opened.action.onClick({} as never)
+    expect(storedQuizIds()).not.toContain('quiz:1')
+
+    watchQuizJob(notice)
+    await flush()
+    const closed = lastInfoOptions()
+    if (!closed.onDismiss) throw new Error('ready notice cannot be closed')
+    closed.onDismiss({} as never)
+    expect(storedQuizIds()).not.toContain('quiz:1')
+  })
+
+  it('keeps the latest stored quiz when one notebook has two jobs', async () => {
+    localStorage.setItem(
+      quizNoticeStorageKey,
+      JSON.stringify({
+        v: 1,
+        jobs: [
+          { quizId: 'quiz:1', notebookId: 'notebook:1' },
+          { quizId: 'quiz:2', notebookId: 'notebook:1' },
+        ],
+      })
+    )
+    const get = vi.fn().mockResolvedValue({ status: 'completed' })
+    installQuizNoticeDeps({ get, delay: vi.fn().mockResolvedValue(undefined) })
+
+    resumeQuizNotices(noticeCopy())
+    await flush()
+
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenCalledWith('quiz:2')
+    expect(storedQuizIds()).toEqual(['quiz:2'])
+  })
+
+  it('ignores corrupt notice storage', () => {
+    localStorage.setItem(quizNoticeStorageKey, '{')
+    expect(() => resumeQuizNotices(noticeCopy())).not.toThrow()
+    expect(toast.info).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('resumes a finished quiz when the module loads again', async () => {
+    localStorage.setItem(
+      quizNoticeStorageKey,
+      JSON.stringify({ v: 1, jobs: [{ quizId: 'quiz:1', notebookId: 'notebook:1' }] })
+    )
+    vi.resetModules()
+    const freshToast = await import('sonner')
+    const fresh = await import('@/lib/quiz-notice')
+    const get = vi.fn().mockResolvedValue({ status: 'completed' })
+    fresh.installQuizNoticeDeps({
+      get,
+      delay: vi.fn().mockResolvedValue(undefined),
+    })
+    vi.mocked(freshToast.toast.info).mockClear()
+
+    fresh.resumeQuizNotices(noticeCopy())
+    await flush()
+    fresh.resumeQuizNotices(noticeCopy())
+    await flush()
+
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(freshToast.toast.info).toHaveBeenCalledWith(
+      notice.ready,
+      expect.objectContaining({
+        id: 'quiz-notice:notebook:1',
+        duration: Infinity,
+        action: expect.objectContaining({ label: notice.openLabel }),
+      })
+    )
+    expect(storedQuizIds()).toEqual(['quiz:1'])
+    fresh.resetQuizNotice()
+  })
+
+  it('resumes a running quiz when the module loads again', async () => {
+    localStorage.setItem(
+      quizNoticeStorageKey,
+      JSON.stringify({ v: 1, jobs: [{ quizId: 'quiz:9', notebookId: 'notebook:9' }] })
+    )
+    vi.resetModules()
+    const freshToast = await import('sonner')
+    const fresh = await import('@/lib/quiz-notice')
+    let release: () => void = () => {}
+    const delay = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        })
+    )
+    fresh.installQuizNoticeDeps({
+      get: vi.fn().mockResolvedValue({ status: 'running' }),
+      delay,
+    })
+    vi.mocked(freshToast.toast.info).mockClear()
+
+    fresh.resumeQuizNotices(noticeCopy())
+    await flush()
+
+    expect(freshToast.toast.info).toHaveBeenCalledWith(
+      enUS.quiz.noticeBackground,
+      expect.objectContaining({
+        id: 'quiz-notice:notebook:9',
+        duration: Infinity,
+      })
+    )
+    expect(storedQuizIds()).toContain('quiz:9')
+    expect(delay).toHaveBeenCalled()
+    fresh.resetQuizNotice()
+    release()
+    await flush()
   })
 })
+
+function noticeCopy() {
+  return {
+    running: enUS.quiz.noticeBackground,
+    ready: notice.ready,
+    openLabel: notice.openLabel,
+    failed: notice.failed,
+  }
+}
+
+function storedQuizIds() {
+  const raw = localStorage.getItem(quizNoticeStorageKey)
+  if (!raw) return []
+  const parsed = JSON.parse(raw) as { jobs?: { quizId?: string }[] }
+  return (parsed.jobs ?? []).map((job) => job.quizId)
+}
+
+function lastInfoOptions() {
+  const options = vi.mocked(toast.info).mock.calls.at(-1)?.[1]
+  if (!options) throw new Error('notice was not shown')
+  return options
+}
