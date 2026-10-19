@@ -637,10 +637,6 @@ def repair_prompt_data(
     format_instructions: str,
     settings: QuizSettings,
 ) -> dict[str, object]:
-    """Data for prompts/quiz/repair.jinja.
-
-    The rules block is included. The full source list is not.
-    """
     focus = [
         questions[fault.question_index]
         for fault in faults

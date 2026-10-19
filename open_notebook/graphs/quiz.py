@@ -279,8 +279,7 @@ async def _questions_with_repair(
     A reply that cannot be parsed, or that contains no keepable question, is
     rewritten once as a whole deck. That rewrite counts as one of the two
     repair rounds. A round is skipped when the job deadline cannot fit another
-    model call. A call that has started is cancelled at the deadline. If at
-    least one question is already valid, that deck is returned.
+    model call. If at least one question is already valid, that deck is returned.
     """
     budget = RepairBudget(
         deadline=deadline,
