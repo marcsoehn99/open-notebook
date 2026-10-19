@@ -58,6 +58,19 @@ vi.mock('@/components/sources/SourceDialog', () => ({
   SourceDialog: () => null,
 }))
 
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, string | number>) => {
+      if (key === 'quiz.listEntry' && values) {
+        return `Quiz ${values.number} · ${values.label}`
+      }
+      return key
+    },
+    language: 'en-US',
+    setLanguage: vi.fn(),
+  }),
+}))
+
 const notebook: NotebookResponse = {
   id: 'notebook:n1',
   name: 'My notebook',
@@ -197,7 +210,7 @@ describe('QuizDialog', () => {
     expect(screen.getByRole('button', { name: 'source-mode:off' })).toBeInTheDocument()
     expect(screen.getByRole('combobox')).toHaveTextContent('quiz.hard')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz 1 · Live' }))
     expect(await screen.findByText('stem-live')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'quiz.newQuiz' }))
 
@@ -274,10 +287,10 @@ describe('QuizDialog', () => {
     fireEvent.click(again)
 
     expect(await screen.findByText('stem-Beta')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Alpha' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Beta' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Quiz 1 · Alpha' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Quiz 2 · Beta' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz 1 · Alpha' }))
     expect(await screen.findByText('stem-Alpha')).toBeInTheDocument()
     expect(screen.queryByText('stem-Beta')).not.toBeInTheDocument()
     expect(quizzesApi.create).toHaveBeenCalledTimes(2)
@@ -300,7 +313,7 @@ describe('QuizDialog', () => {
 
     expect(await screen.findByText('stem-newer')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'quiz.newQuiz' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Older' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz 1 · Older' }))
     expect(await screen.findByText('stem-older')).toBeInTheDocument()
 
     view.rerender(dialog(false))
@@ -309,6 +322,27 @@ describe('QuizDialog', () => {
     expect(await screen.findByText('stem-newer')).toBeInTheDocument()
     expect(screen.queryByText('stem-older')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'quiz.newQuiz' })).toBeInTheDocument()
+  })
+
+  it('numbers quizzes that share settings, with the oldest as Quiz 1', async () => {
+    vi.mocked(quizzesApi.list).mockResolvedValue([
+      summary('quiz:newer', 'Zellen'),
+      summary('quiz:older', 'Zellen'),
+    ])
+    vi.mocked(quizzesApi.get).mockImplementation(async (id: string) => {
+      const older = id === 'quiz:older'
+      return play(id, 'Zellen', older ? 'stem-older' : 'stem-newer', false)
+    })
+
+    render(dialog(true))
+
+    expect(await screen.findByText('stem-newer')).toBeInTheDocument()
+    const rows = screen.getAllByRole('button', { name: /Quiz \d+ ·/ })
+    expect(rows.map((row) => row.textContent)).toEqual(['Quiz 2 · Zellen', 'Quiz 1 · Zellen'])
+    expect(rows.map((row) => row.textContent).join(' ')).not.toMatch(/quiz:/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz 1 · Zellen' }))
+    expect(await screen.findByText('stem-older')).toBeInTheDocument()
   })
 
   it('opens a listed quiz when that row is clicked', async () => {
@@ -323,12 +357,12 @@ describe('QuizDialog', () => {
     render(dialog(true))
 
     expect(await screen.findByText('stem-newer')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Older' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Older' }))
+    expect(screen.getByRole('button', { name: 'Quiz 1 · Older' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz 1 · Older' }))
 
     expect(await screen.findByText('stem-older')).toBeInTheDocument()
     expect(screen.queryByText('stem-newer')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Newer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Quiz 2 · Newer' }))
     expect(await screen.findByText('stem-newer')).toBeInTheDocument()
   })
 })

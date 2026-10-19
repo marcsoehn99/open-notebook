@@ -1029,6 +1029,7 @@ export const enUS = {
     newQuiz: "New quiz",
     previous: "Previous quizzes",
     listFallback: "{{questions}} questions, {{difficulty}}",
+    listEntry: "Quiz {{number}} · {{label}}",
   },
 }
 

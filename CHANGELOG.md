@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Development:** `architecture.md`, `testing.md`, `api-reference.md` and `code-standards.md` are rewritten from the code. A new playbook covers adding an AI provider. Dev setup lives on one page. The AGENTS files agree with the docs. Contributor conventions (Conventional Commits, CHANGELOG sections, pre-PR checks that match CI) are documented
 
 ### Fixed
+- **Quiz list rows show a number.** Two quizzes with the same topic or the same settings used to append the quiz id. Each row is now "Quiz N · label", and Quiz 1 is the oldest. The list stays newest first.
 - **A quiz keeps valid questions when a model call times out.** An HTTP timeout during quiz repair counts as running out of time. The quiz completes with the questions that already passed. With no valid question, the quiz still fails on timeout.
 - **A quiz finishes with the valid questions when the source cannot fill the requested count.** After the two repair rounds, those questions are kept and the quiz completes. The quiz fails only when no question is valid.
 - **Backend tests do not call a real model provider.** The suite blocks external socket connects, still allows loopback and Unix sockets, and does not load provider keys from `.env`.

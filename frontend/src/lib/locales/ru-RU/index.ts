@@ -1030,5 +1030,6 @@ export const ruRU = {
     newQuiz: "New quiz",
     previous: "Previous quizzes",
     listFallback: "{{questions}} questions, {{difficulty}}",
+    listEntry: "Quiz {{number}} · {{label}}",
   },
 } satisfies TranslationShape;

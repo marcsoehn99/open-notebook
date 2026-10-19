@@ -154,18 +154,15 @@ function QuizIndex({
   if (quizzes.length === 0) {
     return null
   }
-  const bases = quizzes.map((quiz) => quizBaseLabel(quiz, t))
-  const totals = new Map<string, number>()
-  for (const label of bases) {
-    totals.set(label, (totals.get(label) ?? 0) + 1)
-  }
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm font-medium">{t('quiz.previous')}</p>
       <ul className="flex flex-col gap-1">
         {quizzes.map((quiz, index) => {
-          const base = bases[index]
-          const label = (totals.get(base) ?? 0) > 1 ? `${base} (${quiz.id})` : base
+          const label = t('quiz.listEntry', {
+            number: quizzes.length - index,
+            label: quizBaseLabel(quiz, t),
+          })
           return (
             <li key={quiz.id}>
               <Button

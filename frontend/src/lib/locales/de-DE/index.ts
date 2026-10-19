@@ -1033,5 +1033,6 @@ export const deDE = {
     newQuiz: "Neues Quiz",
     previous: "Bisherige Quizze",
     listFallback: "{{questions}} Fragen, {{difficulty}}",
+    listEntry: "Quiz {{number}} · {{label}}",
   },
 } satisfies TranslationShape;
