@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-10
-- **Related**: [Environment reference](../../5-CONFIGURATION/environment-reference.md#optional-mistral-reasoning), [Spec-Korrektur](../../../specs/2026-10-18-large4-ueberall-korrektur.md)
+- **Related**: [Environment reference](../../5-CONFIGURATION/environment-reference.md#optional-mistral-reasoning), [Large 4 überall](../../../specs/2026-10-18-large4-ueberall.md)
 
 ## Context
 
@@ -47,24 +47,26 @@ A cut is allowed only after spec criterion 6 (every repaired quote is verbatim) 
 ## Consequences
 
 - Operators who want the speed of `none` set `OPEN_NOTEBOOK_REASONING_QUIZ=none` (or `low` or `minimal`, which send the same field). They do that only after criteria 6 and 7 pass.
+- Spec criterion 11 decides the short deck (review finding P-N2). The quiz may be shorter when the source does not support the requested count. The existing rule stays. A job that runs out of repair time keeps the valid questions instead of failing.
 - A quiz can finish with fewer cards than `num_questions`. The player tolerates that. `QuizDialog` totals `ready.cards.length`. Play, progress, and scoring use the stored questions. `start_attempt` only requires a non-empty deck. The summary field can still show the requested count.
 - The large-source test builds a source near `QUIZ_SOURCE_TOKEN_BUDGET`, checks that the repair prompt is much smaller than the original, and checks that a slow mock still finishes inside the 6 minute deadline.
 
 ## Spec mapping
 
-The spec file lives in another worktree and is not edited here. The correction for its timeout line is [Spec-Korrektur](../../../specs/2026-10-18-large4-ueberall-korrektur.md).
+The spec is [Large 4 überall](../../../specs/2026-10-18-large4-ueberall.md).
 
 | Criterion | Where it lives |
 | --- | --- |
 | 1. Every call uses `mistral-large-4` | Server config, set by Hostinger-Bot. Not this branch. |
 | 2. Embeddings, OCR, speech to text, and text to speech stay unchanged | Fulfilled. This branch does not change those packages. Confirmed. |
 | 3. Frontend progress for a running quiz | Out of scope. |
-| 4. No quiz job ends as `failed` because a call would miss the deadline | This branch. Deadline-aware repair, and `test_large_source_repair_stays_small_and_inside_the_deadline`. |
+| 4. Keine Aufgabe endet wegen des 300-Sekunden-Timeouts mit "failed". Das wird mit einer großen Quelle getestet. | Unbelegt, nur Mock-Test. `test_large_source_repair_stays_small_and_inside_the_deadline` uses a fake clock. |
 | 5. Langfuse evaluation sets | Out of scope. |
 | 6. Repaired quotes are verbatim | This branch. `quote_is_verbatim` runs on repaired questions through `faults_for`. |
 | 7. Evaluation at least as good as Medium | Out of scope. It gates any cut to reasoning. See the decision above. |
 | 8. No `reasoning_effort` unless configured | This branch. `open_notebook/ai/reasoning.py` and `open_notebook/ai/provision.py`. |
 | 9. Repair keeps valid questions | This branch. `open_notebook/graphs/quiz.py` and `open_notebook/domain/quiz.py`. |
 | 10. Score or judge changes | Out of scope. |
+| 11. Gibt die Quelle für die bestellte Fragenzahl nicht genug her, darf das Quiz kürzer ausfallen. | This branch. Criterion 11 decides P-N2. The existing short deck stays. |
 
 Criterion 2, and the decision to leave 3, 5, 7, and 10 untouched, were checked again for this record. No change was required.
