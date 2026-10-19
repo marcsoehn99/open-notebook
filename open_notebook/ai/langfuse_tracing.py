@@ -51,48 +51,80 @@ _DROPPED = _Dropped()
 _THINKING_PART_TYPES = frozenset({"thinking", "reasoning"})
 
 
+_ASSISTANT_ROLES = frozenset({"assistant", "ai"})
+_MESSAGE_ROLES = frozenset(
+    {"assistant", "ai", "user", "human", "system", "tool", "function"}
+)
+
+
 def mask_langfuse_payload(*, data: Any, **kwargs: Any) -> Any:
     """Return a copy of a Langfuse field with thinking and reasoning removed.
 
     The Langfuse client calls this on input, output, and metadata before it
     stores the span. The return value is what gets exported.
+
+    A block whose type is ``thinking`` or ``reasoning`` is dropped wherever it
+    sits. ``<think>`` tags are removed only inside assistant messages, so a
+    source or prompt that quotes those tags stays intact.
     """
     del kwargs
-    masked = _mask_trace_value(data)
+    masked = _mask_trace_value(data, clean_strings=False)
     if masked is _DROPPED:
         return ""
     return masked
 
 
-def _mask_trace_value(value: Any) -> Any:
+def _message_role(value: dict[Any, Any]) -> str | None:
+    role = value.get("role")
+    if isinstance(role, str) and role.lower() in _MESSAGE_ROLES:
+        return role.lower()
+    kind = value.get("type")
+    if isinstance(kind, str) and kind.lower() in _MESSAGE_ROLES:
+        return kind.lower()
+    return None
+
+
+def _mask_trace_value(value: Any, *, clean_strings: bool) -> Any:
     if isinstance(value, str):
+        if not clean_strings:
+            return value
         return clean_thinking_content(value, size_limit=None)
     if isinstance(value, dict):
         part_type = value.get("type")
         if isinstance(part_type, str) and part_type in _THINKING_PART_TYPES:
             return _DROPPED
+        role = _message_role(value)
+        child_clean = role in _ASSISTANT_ROLES if role is not None else clean_strings
         masked: dict[Any, Any] = {}
         for key, item in value.items():
-            child = _mask_trace_value(item)
+            child = _mask_trace_value(item, clean_strings=child_clean)
             if child is _DROPPED:
                 continue
             masked[key] = child
         return masked
     if isinstance(value, list):
-        return _mask_sequence(value)
+        return _mask_sequence(value, clean_strings=clean_strings)
     if isinstance(value, tuple):
-        return tuple(_mask_sequence(list(value)))
+        return tuple(_mask_sequence(list(value), clean_strings=clean_strings))
     return value
 
 
-def _mask_sequence(values: list[Any]) -> list[Any]:
+def _mask_sequence(values: list[Any], *, clean_strings: bool) -> list[Any]:
     kept: list[Any] = []
     for item in values:
-        child = _mask_trace_value(item)
+        child = _mask_trace_value(item, clean_strings=clean_strings)
         if child is _DROPPED:
             continue
         kept.append(child)
     return kept
+
+
+def _warn_mask_not_installed(detail: str) -> None:
+    logger.warning(
+        "Langfuse thinking mask was not installed ({}). "
+        "Traces may include raw thinking text.",
+        detail,
+    )
 
 
 def _install_trace_mask(public_key: str) -> None:
@@ -104,13 +136,16 @@ def _install_trace_mask(public_key: str) -> None:
     """
     manager_module = sys.modules.get("langfuse._client.resource_manager")
     if manager_module is None:
+        _warn_mask_not_installed("client module is not loaded")
         return
     manager = getattr(manager_module, "LangfuseResourceManager", None)
     instances = getattr(manager, "_instances", None)
     if not isinstance(instances, dict):
+        _warn_mask_not_installed("client registry is missing")
         return
     instance = instances.get(public_key)
     if instance is None:
+        _warn_mask_not_installed("no client is registered for this key")
         return
     instance.mask = mask_langfuse_payload
 

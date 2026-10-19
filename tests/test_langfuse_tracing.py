@@ -8,12 +8,26 @@ import types
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from types import SimpleNamespace
+from unittest.mock import patch
 
+import httpx
 import pytest
-from esperanto import LanguageModel
+from esperanto import AIFactory, LanguageModel
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langfuse import Langfuse
+from langfuse._client.resource_manager import LangfuseResourceManager
+from loguru import logger
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+    InMemorySpanExporter,
+)
 
 from open_notebook.ai.langfuse_tracing import (
     DEFAULT_LANGFUSE_HOST,
+    _install_trace_mask,
     langfuse_callbacks,
     mask_langfuse_payload,
     parse_langfuse_settings,
@@ -22,6 +36,9 @@ from open_notebook.ai.langfuse_tracing import (
 )
 from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.ai.reasoning import ReasoningTask
+from open_notebook.graphs.chat import ThreadState, call_model_with_messages
+from open_notebook.graphs.quiz import _reply
+from open_notebook.graphs.transformation import run_transformation
 
 _LANGFUSE_ENV = (
     "LANGFUSE_PUBLIC_KEY",
@@ -406,3 +423,229 @@ async def test_provision_records_provider_default_when_nothing_is_sent(
     assert without_task.metadata["reasoning_effort"] == "provider_default"
     assert asked_but_not_sent.model_kwargs is None
     assert asked_but_not_sent.metadata["reasoning_effort"] == "provider_default"
+
+
+SPAN_THINKING = "SPAN-THINKING-SECRET-19a"
+SOURCE_LEAD = "The paper says"
+SOURCE_TAIL = "KEEP-SOURCE-TAIL-4b"
+SOURCE_TEXT = f"{SOURCE_LEAD} </think> {SOURCE_TAIL}"
+_SPAN_KEY = "pk-lf-span-mask-test"
+_span_client: Langfuse | None = None
+_span_exporter: InMemorySpanExporter | None = None
+
+
+class ScriptedChat(BaseChatModel):
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: object = None,
+        **kwargs: object,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        return ChatResult(
+            generations=[
+                ChatGeneration(
+                    message=AIMessage(
+                        content=[
+                            {
+                                "type": "thinking",
+                                "thinking": [{"type": "text", "text": SPAN_THINKING}],
+                            },
+                            {
+                                "type": "text",
+                                "text": f"<think>{SPAN_THINKING}</think>Visible answer",
+                            },
+                        ]
+                    )
+                )
+            ]
+        )
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted"
+
+
+def test_mask_cleans_assistant_strings_and_keeps_source_text() -> None:
+    secret = "TAGGED-SECRET-2c"
+    payload = [
+        {"role": "user", "content": SOURCE_TEXT},
+        {
+            "role": "user",
+            "content": [
+                {"type": "thinking", "thinking": [{"type": "text", "text": secret}]}
+            ],
+        },
+        {"role": "assistant", "content": f"<think>{secret}</think>Visible answer"},
+        {"note": f"meta {SOURCE_TEXT}"},
+    ]
+
+    sent = mask_langfuse_payload(data=payload)
+    encoded = json.dumps(sent)
+
+    assert secret not in encoded
+    assert SOURCE_LEAD in encoded
+    assert SOURCE_TAIL in encoded
+    assert sent[2]["content"] == "Visible answer"
+    assert sent[3]["note"] == f"meta {SOURCE_TEXT}"
+
+
+def _warning_text(call) -> str:
+    records: list[str] = []
+    sink = logger.add(lambda message: records.append(str(message)), level="WARNING")
+    try:
+        call()
+    finally:
+        logger.remove(sink)
+    return "\n".join(records)
+
+
+def test_mask_install_warns_when_the_client_is_missing() -> None:
+    text = _warning_text(lambda: _install_trace_mask("pk-lf-not-registered"))
+    assert "thinking mask was not installed" in text
+    assert "no client is registered for this key" in text
+
+
+def test_mask_install_warns_when_the_module_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delitem(sys.modules, "langfuse._client.resource_manager", raising=False)
+    text = _warning_text(lambda: _install_trace_mask("pk-lf-not-registered"))
+    assert "client module is not loaded" in text
+
+
+def test_mask_install_warns_when_the_registry_is_not_a_dict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(LangfuseResourceManager, "_instances", None)
+    text = _warning_text(lambda: _install_trace_mask("pk-lf-not-registered"))
+    assert "client registry is missing" in text
+
+
+def _reject_network(request: httpx.Request) -> httpx.Response:
+    raise AssertionError(f"unexpected network call to {request.url}")
+
+
+@pytest.fixture
+def recorded_spans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[Langfuse, InMemorySpanExporter]]:
+    global _span_client, _span_exporter
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", _SPAN_KEY)
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-placeholder")
+    monkeypatch.setenv("LANGFUSE_HOST", "https://langfuse.invalid")
+    monkeypatch.setenv("LANGFUSE_MEDIA_UPLOAD_ENABLED", "false")
+    if _span_client is None:
+        exporter = InMemorySpanExporter()
+        _span_exporter = exporter
+        _span_client = Langfuse(
+            public_key=_SPAN_KEY,
+            secret_key="sk-lf-placeholder",
+            host="https://langfuse.invalid",
+            mask=mask_langfuse_payload,
+            span_exporter=exporter,
+            tracer_provider=TracerProvider(),
+            httpx_client=httpx.Client(transport=httpx.MockTransport(_reject_network)),
+        )
+    assert _span_client is not None
+    assert _span_exporter is not None
+    assert list(LangfuseResourceManager._instances) == [_SPAN_KEY]
+    _span_exporter.clear()
+    yield _span_client, _span_exporter
+
+
+def _patch_scripted_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    language_model = AIFactory.create_language(
+        "anthropic", "claude-sonnet-5", config={"api_key": "test"}
+    )
+
+    async def get_model(*args: object, **kwargs: object) -> LanguageModel:
+        del args, kwargs
+        return language_model
+
+    monkeypatch.setattr("open_notebook.ai.provision.model_manager.get_model", get_model)
+    monkeypatch.setattr(
+        "open_notebook.ai.provision.model_manager.get_default_model", get_model
+    )
+    monkeypatch.setattr(
+        type(language_model), "to_langchain", lambda self: ScriptedChat()
+    )
+
+
+def _chat_state() -> ThreadState:
+    return {
+        "messages": [HumanMessage(content=SOURCE_TEXT)],
+        "notebook": None,
+        "context": None,
+        "context_config": None,
+        "model_override": None,
+    }
+
+
+def _assert_masked_span(client: Langfuse, exporter: InMemorySpanExporter) -> str:
+    client.flush()
+    spans = exporter.get_finished_spans()
+    blob = json.dumps(
+        [dict(span.attributes) for span in spans if span.attributes],
+        default=str,
+    )
+    assert spans, "no span exported"
+    assert SPAN_THINKING not in blob
+    assert SOURCE_LEAD in blob
+    assert SOURCE_TAIL in blob
+    assert "Visible answer" in blob
+    return blob
+
+
+def test_chat_span_omits_thinking(
+    recorded_spans: tuple[Langfuse, InMemorySpanExporter],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, exporter = recorded_spans
+    _patch_scripted_model(monkeypatch)
+    call_model_with_messages(_chat_state(), {"configurable": {}})
+    blob = _assert_masked_span(client, exporter)
+    assert "chat" in blob
+
+
+@pytest.mark.asyncio
+async def test_transformation_span_omits_thinking(
+    recorded_spans: tuple[Langfuse, InMemorySpanExporter],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, exporter = recorded_spans
+    _patch_scripted_model(monkeypatch)
+    with patch(
+        "open_notebook.graphs.transformation.DefaultPrompts",
+        return_value=SimpleNamespace(transformation_instructions=None),
+    ):
+        result = await run_transformation(
+            {
+                "input_text": SOURCE_TEXT,
+                "transformation": SimpleNamespace(title="Summary", prompt="Summarize"),
+            },
+            {"configurable": {}},
+        )
+    assert result["output"] == "Visible answer"
+    blob = _assert_masked_span(client, exporter)
+    assert "transformation" in blob
+
+
+@pytest.mark.asyncio
+async def test_quiz_span_omits_thinking(
+    recorded_spans: tuple[Langfuse, InMemorySpanExporter],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, exporter = recorded_spans
+    _patch_scripted_model(monkeypatch)
+    model = await provision_langchain_model(
+        SOURCE_TEXT,
+        "model:1",
+        "transformation",
+        task=ReasoningTask.QUIZ,
+    )
+    visible = await _reply(model, SOURCE_TEXT)
+    assert visible == "Visible answer"
+    blob = _assert_masked_span(client, exporter)
+    assert "quiz" in blob
