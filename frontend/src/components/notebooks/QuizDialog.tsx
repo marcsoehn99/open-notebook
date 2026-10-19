@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Loader2 } from 'lucide-react'
@@ -8,6 +8,15 @@ import { toast } from 'sonner'
 
 import { quizzesApi } from '@/lib/api/quizzes'
 import { QUERY_KEYS } from '@/lib/api/query-client'
+import {
+  announceQuizRunning,
+  clearQuizOpenRequest,
+  dismissQuizNotice,
+  getQuizOpenServerSnapshot,
+  getQuizOpenSnapshot,
+  subscribeQuizOpen,
+  watchQuizJob,
+} from '@/lib/quiz-notice'
 import { useQuiz } from '@/lib/hooks/use-quizzes'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { NoteResponse, NotebookResponse, SourceListResponse } from '@/lib/types/api'
@@ -122,6 +131,19 @@ export function QuizDialog({
   const [selections, setSelections] = useState<Record<string, NotebookSelection>>({})
   const [expanded, setExpanded] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
+  const openRequest = useSyncExternalStore(
+    subscribeQuizOpen,
+    getQuizOpenSnapshot,
+    getQuizOpenServerSnapshot
+  )
+
+  useEffect(() => {
+    const pending = openRequest.request
+    if (!pending || pending.notebookId !== notebook.id) return
+    setQuizId(pending.quizId)
+    onOpenChange(true)
+    clearQuizOpenRequest()
+  }, [openRequest, notebook.id, onOpenChange])
 
   useEffect(() => {
     if (!open) {
@@ -172,10 +194,19 @@ export function QuizDialog({
       language: quizLanguage.trim(),
     }
     setCreating(true)
+    announceQuizRunning(notebook.id, t('quiz.noticeBackground'))
     try {
       const created = await quizzesApi.create(notebook.id, body)
       setQuizId(created.id)
+      watchQuizJob({
+        notebookId: notebook.id,
+        quizId: created.id,
+        ready: t('quiz.noticeReady'),
+        openLabel: t('quiz.noticeOpen'),
+        failed: t('quiz.failed'),
+      })
     } catch {
+      dismissQuizNotice(notebook.id)
       toast.error(t('quiz.createFailed'))
     } finally {
       setCreating(false)
@@ -361,6 +392,11 @@ export function QuizDialog({
             >
               {creating ? t('quiz.starting') : t('quiz.start')}
             </Button>
+            {creating && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t('quiz.noticeBackground')}
+              </p>
+            )}
           </div>
         )}
       </DialogContent>
