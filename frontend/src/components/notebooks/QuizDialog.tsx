@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Loader2 } from 'lucide-react'
@@ -17,7 +17,7 @@ import {
   subscribeQuizOpen,
   watchQuizJob,
 } from '@/lib/quiz-notice'
-import { useQuiz } from '@/lib/hooks/use-quizzes'
+import { useNotebookQuizzes, useQuiz } from '@/lib/hooks/use-quizzes'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { NoteResponse, NotebookResponse, SourceListResponse } from '@/lib/types/api'
 import {
@@ -27,6 +27,7 @@ import {
   Explanation,
   QuestionType,
   QuizPrompt,
+  QuizSummary,
   Submission,
   Verdict,
   isQuizReady,
@@ -86,6 +87,85 @@ function httpStatus(error: unknown): number | undefined {
   return undefined
 }
 
+type QuizPane =
+  | { kind: 'latest' }
+  | { kind: 'form' }
+  | { kind: 'quiz'; quizId: string }
+
+const difficultyCopy = {
+  easy: 'quiz.easy',
+  medium: 'quiz.medium',
+  hard: 'quiz.hard',
+} as const
+
+function shownQuizId(pane: QuizPane, listed: QuizSummary[]) {
+  if (pane.kind === 'form') {
+    return null
+  }
+  if (pane.kind === 'quiz') {
+    return pane.quizId
+  }
+  return listed[0]?.id ?? null
+}
+
+function quizBaseLabel(
+  quiz: QuizSummary,
+  translate: (key: string, values?: Record<string, string | number>) => string
+) {
+  const topic = quiz.topic_prompt?.trim()
+  if (topic) {
+    return topic
+  }
+  return translate('quiz.listFallback', {
+    questions: quiz.num_questions,
+    difficulty: translate(difficultyCopy[quiz.difficulty]),
+  })
+}
+
+function QuizIndex({
+  quizzes,
+  activeQuizId,
+  onOpen,
+}: {
+  quizzes: QuizSummary[]
+  activeQuizId: string | null
+  onOpen: (quizId: string) => void
+}) {
+  const { t } = useTranslation()
+  if (quizzes.length === 0) {
+    return null
+  }
+  const bases = quizzes.map((quiz) => quizBaseLabel(quiz, t))
+  const totals = new Map<string, number>()
+  for (const label of bases) {
+    totals.set(label, (totals.get(label) ?? 0) + 1)
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium">{t('quiz.previous')}</p>
+      <ul className="flex flex-col gap-1">
+        {quizzes.map((quiz, index) => {
+          const base = bases[index]
+          const label = (totals.get(base) ?? 0) > 1 ? `${base} (${quiz.id})` : base
+          return (
+            <li key={quiz.id}>
+              <Button
+                type="button"
+                variant={quiz.id === activeQuizId ? 'secondary' : 'outline'}
+                className="h-auto min-h-11 w-full justify-start whitespace-normal text-left"
+                aria-current={quiz.id === activeQuizId ? 'true' : undefined}
+                onClick={() => onOpen(quiz.id)}
+              >
+                {label}
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 function ensureAttempt(quizId: string): Promise<string> {
   const existing = sessionStorage.getItem(attemptKey(quizId))
   if (existing) {
@@ -117,7 +197,13 @@ export function QuizDialog({
   onOpenChange,
 }: QuizDialogProps) {
   const { t, language } = useTranslation()
-  const [quizId, setQuizId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const notebookQuizzes = useNotebookQuizzes(notebook.id, open)
+  // The notice effect sets this before `open` becomes true, so the requested quiz is kept.
+  const noticePin = useRef(false)
+  const [pane, setPane] = useState<QuizPane>({ kind: 'latest' })
+  const [seenOpen, setSeenOpen] = useState(open)
+  const [seenNotebookId, setSeenNotebookId] = useState(notebook.id)
   const [numQuestions, setNumQuestions] = useState(5)
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [topic, setTopic] = useState('')
@@ -136,11 +222,27 @@ export function QuizDialog({
     getQuizOpenSnapshot,
     getQuizOpenServerSnapshot
   )
+  if (notebook.id !== seenNotebookId) {
+    setSeenNotebookId(notebook.id)
+    setSeenOpen(open)
+    noticePin.current = false
+    setPane({ kind: 'latest' })
+  } else if (open !== seenOpen) {
+    setSeenOpen(open)
+    if (!open) {
+      noticePin.current = false
+    } else if (noticePin.current) {
+      noticePin.current = false
+    } else {
+      setPane({ kind: 'latest' })
+    }
+  }
 
   useEffect(() => {
     const pending = openRequest.request
     if (!pending || pending.notebookId !== notebook.id) return
-    setQuizId(pending.quizId)
+    noticePin.current = true
+    setPane({ kind: 'quiz', quizId: pending.quizId })
     onOpenChange(true)
     clearQuizOpenRequest()
   }, [openRequest, notebook.id, onOpenChange])
@@ -197,7 +299,12 @@ export function QuizDialog({
     announceQuizRunning(notebook.id, t('quiz.noticeBackground'))
     try {
       const created = await quizzesApi.create(notebook.id, body)
-      setQuizId(created.id)
+      queryClient.setQueryData<QuizSummary[]>(QUERY_KEYS.quizzes(notebook.id), (current) => {
+        const previous = current ?? []
+        return [created, ...previous.filter((quiz) => quiz.id !== created.id)]
+      })
+      setPane({ kind: 'quiz', quizId: created.id })
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.quizzes(notebook.id) })
       watchQuizJob({
         notebookId: notebook.id,
         quizId: created.id,
@@ -256,6 +363,18 @@ export function QuizDialog({
     })
   }
 
+  const listed = notebookQuizzes.data ?? []
+  const activeQuizId = shownQuizId(pane, listed)
+  const waitingForList = pane.kind === 'latest' && notebookQuizzes.isPending
+
+  function showForm() {
+    setPane({ kind: 'form' })
+  }
+
+  function openQuiz(quizId: string) {
+    setPane({ kind: 'quiz', quizId })
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
@@ -263,140 +382,152 @@ export function QuizDialog({
           <DialogTitle>{t('quiz.title')}</DialogTitle>
           <DialogDescription>{t('quiz.description')}</DialogDescription>
         </DialogHeader>
-        {quizId ? (
-          <QuizPlayer quizId={quizId} onRestart={() => setQuizId(null)} />
+        {waitingForList ? (
+          <p className="text-sm text-muted-foreground">{t('quiz.waiting')}</p>
         ) : (
           <div className="flex flex-col gap-4">
-            {sources.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t('quiz.noSources')}</p>
+            <QuizIndex quizzes={listed} activeQuizId={activeQuizId} onOpen={openQuiz} />
+            {activeQuizId ? (
+              <>
+                <Button type="button" variant="outline" onClick={showForm}>
+                  {t('quiz.newQuiz')}
+                </Button>
+                <QuizPlayer key={activeQuizId} quizId={activeQuizId} onRestart={showForm} />
+              </>
             ) : (
-              <ContentSelectionPanel
-                notebooks={[notebook]}
-                isLoading={false}
-                selectedNotebookSummaries={[summary]}
-                tokenCount={0}
-                charCount={0}
-                expandedNotebooks={expanded}
-                setExpandedNotebooks={setExpanded}
-                selections={selections}
-                sourcesByNotebook={{ [notebook.id]: sources }}
-                notesByNotebook={{ [notebook.id]: notes }}
-                fetchingNotebookIds={new Set()}
-                onNotebookToggle={toggleNotebook}
-                onSourceModeChange={changeSource}
-                onNoteToggle={keepNotesOff}
-              />
-            )}
-            {selectedSourceIds.length === 0 && (
-              <p className="text-sm text-destructive">{t('quiz.selectSources')}</p>
-            )}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="quiz-count">{t('quiz.numQuestions')}</Label>
-                <Input
-                  id="quiz-count"
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={numQuestions}
-                  onChange={(event) => setNumQuestions(Number(event.target.value))}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label>{t('quiz.difficulty')}</Label>
-                <Select
-                  value={difficulty}
-                  onValueChange={(value) => setDifficulty(value as Difficulty)}
+              <div className="flex flex-col gap-4">
+                {sources.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('quiz.noSources')}</p>
+                ) : (
+                  <ContentSelectionPanel
+                    notebooks={[notebook]}
+                    isLoading={false}
+                    selectedNotebookSummaries={[summary]}
+                    tokenCount={0}
+                    charCount={0}
+                    expandedNotebooks={expanded}
+                    setExpandedNotebooks={setExpanded}
+                    selections={selections}
+                    sourcesByNotebook={{ [notebook.id]: sources }}
+                    notesByNotebook={{ [notebook.id]: notes }}
+                    fetchingNotebookIds={new Set()}
+                    onNotebookToggle={toggleNotebook}
+                    onSourceModeChange={changeSource}
+                    onNoteToggle={keepNotesOff}
+                  />
+                )}
+                {selectedSourceIds.length === 0 && (
+                  <p className="text-sm text-destructive">{t('quiz.selectSources')}</p>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="quiz-count">{t('quiz.numQuestions')}</Label>
+                    <Input
+                      id="quiz-count"
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={numQuestions}
+                      onChange={(event) => setNumQuestions(Number(event.target.value))}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>{t('quiz.difficulty')}</Label>
+                    <Select
+                      value={difficulty}
+                      onValueChange={(value) => setDifficulty(value as Difficulty)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="easy">{t('quiz.easy')}</SelectItem>
+                        <SelectItem value="medium">{t('quiz.medium')}</SelectItem>
+                        <SelectItem value="hard">{t('quiz.hard')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="quiz-topic">{t('quiz.topic')}</Label>
+                    <Input
+                      id="quiz-topic"
+                      value={topic}
+                      placeholder={t('quiz.topicPlaceholder')}
+                      onChange={(event) => setTopic(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="quiz-language">{t('quiz.language')}</Label>
+                    <Input
+                      id="quiz-language"
+                      value={quizLanguage}
+                      onChange={(event) => setQuizLanguage(event.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>{t('quiz.types')}</Label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={types.mc}
+                      onCheckedChange={(checked) =>
+                        setTypes((prev) => ({ ...prev, mc: checked === true }))
+                      }
+                    />
+                    {t('quiz.typeMc')}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={types.multi}
+                      onCheckedChange={(checked) =>
+                        setTypes((prev) => ({ ...prev, multi: checked === true }))
+                      }
+                    />
+                    {t('quiz.typeMulti')}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={types.short}
+                      onCheckedChange={(checked) =>
+                        setTypes((prev) => ({ ...prev, short: checked === true }))
+                      }
+                    />
+                    {t('quiz.typeShort')}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={types.cloze}
+                      onCheckedChange={(checked) =>
+                        setTypes((prev) => ({ ...prev, cloze: checked === true }))
+                      }
+                    />
+                    {t('quiz.typeCloze')}
+                  </label>
+                  {selectedTypes.length === 0 && (
+                    <p className="text-sm text-destructive">{t('quiz.selectTypes')}</p>
+                  )}
+                </div>
+                <Button
+                  onClick={startQuiz}
+                  disabled={
+                    creating ||
+                    sources.length === 0 ||
+                    selectedSourceIds.length === 0 ||
+                    selectedTypes.length === 0 ||
+                    !quizLanguage.trim() ||
+                    !Number.isInteger(numQuestions) ||
+                    numQuestions < 1 ||
+                    numQuestions > 10
+                  }
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="easy">{t('quiz.easy')}</SelectItem>
-                    <SelectItem value="medium">{t('quiz.medium')}</SelectItem>
-                    <SelectItem value="hard">{t('quiz.hard')}</SelectItem>
-                  </SelectContent>
-                </Select>
+                  {creating ? t('quiz.starting') : t('quiz.start')}
+                </Button>
+                {creating && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    {t('quiz.noticeBackground')}
+                  </p>
+                )}
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="quiz-topic">{t('quiz.topic')}</Label>
-                <Input
-                  id="quiz-topic"
-                  value={topic}
-                  placeholder={t('quiz.topicPlaceholder')}
-                  onChange={(event) => setTopic(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="quiz-language">{t('quiz.language')}</Label>
-                <Input
-                  id="quiz-language"
-                  value={quizLanguage}
-                  onChange={(event) => setQuizLanguage(event.target.value)}
-                />
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>{t('quiz.types')}</Label>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={types.mc}
-                  onCheckedChange={(checked) =>
-                    setTypes((prev) => ({ ...prev, mc: checked === true }))
-                  }
-                />
-                {t('quiz.typeMc')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={types.multi}
-                  onCheckedChange={(checked) =>
-                    setTypes((prev) => ({ ...prev, multi: checked === true }))
-                  }
-                />
-                {t('quiz.typeMulti')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={types.short}
-                  onCheckedChange={(checked) =>
-                    setTypes((prev) => ({ ...prev, short: checked === true }))
-                  }
-                />
-                {t('quiz.typeShort')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={types.cloze}
-                  onCheckedChange={(checked) =>
-                    setTypes((prev) => ({ ...prev, cloze: checked === true }))
-                  }
-                />
-                {t('quiz.typeCloze')}
-              </label>
-              {selectedTypes.length === 0 && (
-                <p className="text-sm text-destructive">{t('quiz.selectTypes')}</p>
-              )}
-            </div>
-            <Button
-              onClick={startQuiz}
-              disabled={
-                creating ||
-                sources.length === 0 ||
-                selectedSourceIds.length === 0 ||
-                selectedTypes.length === 0 ||
-                !quizLanguage.trim() ||
-                !Number.isInteger(numQuestions) ||
-                numQuestions < 1 ||
-                numQuestions > 10
-              }
-            >
-              {creating ? t('quiz.starting') : t('quiz.start')}
-            </Button>
-            {creating && (
-              <p role="status" className="text-sm text-muted-foreground">
-                {t('quiz.noticeBackground')}
-              </p>
             )}
           </div>
         )}
