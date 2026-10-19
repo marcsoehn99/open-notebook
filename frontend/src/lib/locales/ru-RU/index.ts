@@ -1027,5 +1027,8 @@ export const ruRU = {
     errorTimeout: "Die Quiz-Erzeugung hat zu lange gedauert",
     errorNotConfigured: "Es ist kein Quiz-Modell konfiguriert",
     errorTooLarge: "Der Quiz-Prompt ist zu lang",
+    newQuiz: "New quiz",
+    previous: "Previous quizzes",
+    listFallback: "{{questions}} questions, {{difficulty}}",
   },
 } satisfies TranslationShape;

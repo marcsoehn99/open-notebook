@@ -1030,5 +1030,8 @@ export const deDE = {
     errorTimeout: "Die Quiz-Erzeugung hat zu lange gedauert",
     errorNotConfigured: "Es ist kein Quiz-Modell konfiguriert",
     errorTooLarge: "Der Quiz-Prompt ist zu lang",
+    newQuiz: "Neues Quiz",
+    previous: "Bisherige Quizze",
+    listFallback: "{{questions}} Fragen, {{difficulty}}",
   },
 } satisfies TranslationShape;
