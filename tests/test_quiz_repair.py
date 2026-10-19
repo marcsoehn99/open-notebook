@@ -4,13 +4,19 @@ import asyncio
 import json
 import time
 
+import httpx
 import pytest
 from loguru import logger
 
-from commands.quiz_commands import QUIZ_JOB_TIMEOUT_SECONDS
+from commands.quiz_commands import (
+    QUIZ_JOB_TIMEOUT_SECONDS,
+    GenerateQuizInput,
+    generate_quiz_command,
+)
 from open_notebook.ai.reasoning import ReasoningTask
-from open_notebook.domain.quiz import QUIZ_SOURCE_TOKEN_BUDGET, parse_settings
-from open_notebook.exceptions import QuizModelOutputError
+from open_notebook.domain.notebook import Source
+from open_notebook.domain.quiz import QUIZ_SOURCE_TOKEN_BUDGET, Quiz, parse_settings
+from open_notebook.exceptions import QuizModelOutputError, QuizTimeoutError
 from open_notebook.graphs.quiz import generate_node
 from open_notebook.utils import token_count
 
@@ -80,6 +86,15 @@ class _ClockedModel(_ScriptedModel):
     async def ainvoke(self, prompt: str) -> _Message:
         self._clock.t += self._step
         return await super().ainvoke(prompt)
+
+
+class _ReadTimeoutRepair(_ScriptedModel):
+    async def ainvoke(self, prompt: str) -> _Message:
+        index = len(self.prompts)
+        self.prompts.append(prompt)
+        if index > 0:
+            raise httpx.ReadTimeout("The read operation timed out")
+        return _Message(self._replies[index])
 
 
 class _HangingRepair(_ScriptedModel):
@@ -497,6 +512,93 @@ async def test_repair_call_stops_when_the_job_deadline_is_reached(
     assert len(prompts) == 2
     assert any("quiz repair skipped" in message for message in messages)
     assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+def _queued_quiz() -> Quiz:
+    return Quiz(
+        id="quiz:1",
+        notebook="notebook:1",
+        command="command:1",
+        model_id="model:1",
+        source_ids=[SOURCE],
+        num_questions=2,
+        difficulty="medium",
+        topic_prompt=None,
+        question_types=["short"],
+        language="en",
+        status="queued",
+        error_message=None,
+    )
+
+
+def _patch_generation(
+    monkeypatch: pytest.MonkeyPatch, quiz: Quiz, model: _ScriptedModel
+) -> list[tuple[object, ...]]:
+    stored: list[tuple[object, ...]] = []
+
+    async def fake_get(cls: type, quiz_id: str) -> Quiz:
+        del cls, quiz_id
+        return quiz
+
+    class _Source:
+        full_text = SLICE
+
+    async def source_get(cls: type, source_id: str) -> _Source:
+        del cls, source_id
+        return _Source()
+
+    async def save(self: Quiz) -> None:
+        del self
+
+    async def replace(quiz_id: str, deck: tuple[object, ...]) -> None:
+        del quiz_id
+        stored.append(deck)
+
+    async def _provision(*args: object, **kwargs: object) -> _ScriptedModel:
+        del args, kwargs
+        return model
+
+    monkeypatch.setattr(Quiz, "get", classmethod(fake_get))
+    monkeypatch.setattr(Quiz, "save", save)
+    monkeypatch.setattr(Source, "get", classmethod(source_get))
+    monkeypatch.setattr("commands.quiz_commands.replace_questions", replace)
+    monkeypatch.setattr(
+        "open_notebook.graphs.quiz.provision_langchain_model",
+        _provision,
+    )
+    return stored
+
+
+@pytest.mark.asyncio
+async def test_httpx_read_timeout_on_repair_completes_with_the_shorter_deck(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    model = _ReadTimeoutRepair([_deck(good, bad)])
+    quiz = _queued_quiz()
+    stored = _patch_generation(monkeypatch, quiz, model)
+    result = await generate_quiz_command(GenerateQuizInput(quiz_id="quiz:1"))
+    assert result.success is True
+    assert quiz.status == "completed"
+    assert quiz.error_message is None
+    assert len(model.prompts) == 2
+    assert [card.stem for card in stored[0]] == ["Name the city."]
+
+
+@pytest.mark.asyncio
+async def test_httpx_read_timeout_with_no_valid_question_is_a_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bad_city = _question("Name the city.", BAD_QUOTE)
+    bad_river = _question("Name the river.", BAD_QUOTE)
+    model = _ReadTimeoutRepair([_deck(bad_city, bad_river)])
+    quiz = _queued_quiz()
+    _patch_generation(monkeypatch, quiz, model)
+    with pytest.raises(QuizTimeoutError):
+        await generate_quiz_command(GenerateQuizInput(quiz_id="quiz:1"))
+    assert quiz.status == "failed"
+    assert quiz.error_message == "timeout"
 
 
 @pytest.mark.asyncio
