@@ -1,6 +1,8 @@
 """Quiz repair rewrites failing questions and keeps the ones that passed."""
 
+import asyncio
 import json
+import time
 
 import pytest
 from loguru import logger
@@ -77,6 +79,51 @@ class _ClockedModel(_ScriptedModel):
 
     async def ainvoke(self, prompt: str) -> _Message:
         self._clock.t += self._step
+        return await super().ainvoke(prompt)
+
+
+class _HangingRepair(_ScriptedModel):
+    def __init__(self, replies: list[object], hang_seconds: float) -> None:
+        super().__init__(replies)
+        self.hang_seconds = hang_seconds
+        self.cancelled = False
+
+    async def ainvoke(self, prompt: str) -> _Message:
+        index = len(self.prompts)
+        self.prompts.append(prompt)
+        if index > 0:
+            try:
+                await asyncio.sleep(self.hang_seconds)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+        return _Message(self._replies[index])
+
+
+class _RetryModel(_ScriptedModel):
+    def __init__(
+        self,
+        replies: list[object],
+        shared: dict[str, list[int]] | None = None,
+    ) -> None:
+        super().__init__(replies)
+        self.max_retries = 5
+        self._shared = shared if shared is not None else {"attempts": []}
+
+    def model_copy(
+        self, *, update: dict[str, object] | None = None, deep: bool = False
+    ):
+        del deep
+        cloned = _RetryModel(self._replies, self._shared)
+        cloned.prompts = self.prompts
+        cloned.max_retries = self.max_retries
+        retries = None if update is None else update.get("max_retries")
+        if isinstance(retries, int):
+            cloned.max_retries = retries
+        return cloned
+
+    async def ainvoke(self, prompt: str) -> _Message:
+        self._shared["attempts"].append(self.max_retries)
         return await super().ainvoke(prompt)
 
 
@@ -426,6 +473,48 @@ async def test_deadline_keeps_valid_questions_without_a_timeout(
     assert clock.t <= QUIZ_JOB_TIMEOUT_SECONDS
     assert any("quiz repair skipped" in message for message in messages)
     assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+@pytest.mark.asyncio
+async def test_repair_call_stops_when_the_job_deadline_is_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("open_notebook.graphs.quiz.llm_timeout_seconds", lambda: 0.05)
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    model = _HangingRepair([_deck(good, bad), _deck(bad)], hang_seconds=1.5)
+    messages, sink = _capture_warnings()
+    started = time.monotonic()
+    try:
+        result, prompts, _kwargs = await _run(
+            monkeypatch,
+            [],
+            deadline=time.monotonic() + 0.6,
+            model=model,
+        )
+    finally:
+        logger.remove(sink)
+    assert time.monotonic() - started < 2
+    assert model.cancelled
+    assert len(prompts) == 2
+    assert any("quiz repair skipped" in message for message in messages)
+    assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+@pytest.mark.asyncio
+async def test_quiz_call_uses_one_http_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    other = _question("Name the river.", RIVER_QUOTE)
+    model = _RetryModel([_deck(good, other)])
+    result, prompts, _kwargs = await _run(monkeypatch, [], model=model)
+    assert model._shared["attempts"] == [1]
+    assert len(prompts) == 1
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
 
 
 def _mc(stem: str, quote: str) -> dict[str, object]:
