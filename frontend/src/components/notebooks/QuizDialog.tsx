@@ -201,6 +201,7 @@ export function QuizDialog({
       watchQuizJob({
         notebookId: notebook.id,
         quizId: created.id,
+        running: t('quiz.noticeBackground'),
         ready: t('quiz.noticeReady'),
         openLabel: t('quiz.noticeOpen'),
         failed: t('quiz.failed'),
