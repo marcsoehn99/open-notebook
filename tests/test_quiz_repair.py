@@ -87,6 +87,7 @@ async def _run(
     deadline: float | None = None,
     slices: dict[str, str] | None = None,
     model: _ScriptedModel | None = None,
+    settings: object | None = None,
 ):
     scripted = model or _ScriptedModel(replies)
     seen: dict[str, object] = {}
@@ -103,7 +104,7 @@ async def _run(
         "quiz_id": "quiz:1",
         "model_id": "model:1",
         "slices": slices or {SOURCE: SLICE},
-        "settings": _settings(),
+        "settings": _settings() if settings is None else settings,
     }
     if deadline is not None:
         state["deadline"] = deadline
@@ -204,6 +205,7 @@ async def test_deck_with_no_keepable_question_is_rewritten_once(
     )
     assert len(prompts) == 2
     assert "No question could be kept" in prompts[1]
+    assert "Ask 2 questions in en." in prompts[1]
     assert "exactly 1" not in prompts[1]
     assert "Name the city." in prompts[1]
     assert "Name the river." in prompts[1]
@@ -253,6 +255,11 @@ async def test_unreadable_first_reply_is_rewritten_without_the_original_prompt(
     )
     assert len(prompts) == 2
     assert "The previous JSON failed validation" in prompts[1]
+    assert "Ask 2 questions in en." in prompts[1]
+    assert "Use only these question types: ['short']." in prompts[1]
+    assert "Difficulty is medium." in prompts[1]
+    assert "have to apply the material." in prompts[1]
+    assert "at least 15 characters" in prompts[1]
     assert "Write a quiz from the source text below." not in prompts[1]
     assert [card.stem for card in result["deck"]] == [
         "Name the city.",
@@ -419,6 +426,60 @@ async def test_deadline_keeps_valid_questions_without_a_timeout(
     assert clock.t <= QUIZ_JOB_TIMEOUT_SECONDS
     assert any("quiz repair skipped" in message for message in messages)
     assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+def _mc(stem: str, quote: str) -> dict[str, object]:
+    return {
+        "type": "mc",
+        "stem": stem,
+        "options": ["Paris", "Lyon"],
+        "correct_indexes": [0],
+        "explanation": "The sentence names it.",
+        "quote": quote,
+        "source_id": SOURCE,
+    }
+
+
+def _german_mc_settings():
+    return parse_settings(
+        source_ids=[SOURCE],
+        num_questions=2,
+        difficulty="medium",
+        topic_prompt="Hauptstadt",
+        question_types=["mc"],
+        language="de",
+        model_id="model:quiz",
+    )
+
+
+@pytest.mark.asyncio
+async def test_repair_prompt_keeps_language_type_difficulty_and_topic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _mc("Name the city.", GOOD_QUOTE)
+    bad = _mc("Name the river.", BAD_QUOTE)
+    fixed = _mc("Name the river.", RIVER_QUOTE)
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        [_deck(good, bad), _deck(fixed)],
+        settings=_german_mc_settings(),
+    )
+    repair = prompts[1]
+    assert len(prompts) == 2
+    assert "The questions are in de." in repair
+    assert "Use only these question types: ['mc']." in repair
+    assert "Difficulty is medium." in repair
+    assert "have to apply the material." in repair
+    assert "Focus on this topic: Hauptstadt" in repair
+    assert "verbatim substring" in repair
+    assert "at least 15 characters" in repair
+    assert "exactly 1" in repair
+    assert "Ask 2 questions" not in repair
+    assert "Write a quiz from the source text below." not in repair
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
 
 
 def _source_near_budget() -> str:

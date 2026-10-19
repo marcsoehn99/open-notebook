@@ -1,24 +1,6 @@
 Write a quiz from the source text below.
 
-Ask {{ num_questions }} questions in {{ language }}.
-The learner should have to {{ bloom }} the material.
-Difficulty is {{ difficulty }}.
-Use only these question types: {{ question_types }}.
-The full set of type names is {{ QUESTION_TYPES }}.
-{% if topic_prompt %}
-Focus on this topic: {{ topic_prompt }}
-{% endif %}
-
-Rules for every question:
-- type is one of the requested question types.
-- stem is the question. A cloze stem contains {{ cloze_blank }} once.
-- mc has at least two options and exactly one correct_indexes entry.
-- multi has at least two options and correct_indexes is a non-empty proper subset.
-- short and cloze have no options and no correct_indexes.
-- short and cloze accepted lists include the expected answer and a few paraphrases.
-- quote is a verbatim substring of that source, at least {{ min_quote_chars }} characters, with the same case and spaces.
-- source_id is one of the source ids below.
-- explanation is a short reason, with no new facts.
+{% include "quiz/rules.jinja" %}
 
 Sources:
 {% for item in slices %}

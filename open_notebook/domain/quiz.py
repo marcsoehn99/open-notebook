@@ -611,6 +611,20 @@ def source_excerpts(
     return tuple(excerpts)
 
 
+def quiz_prompt_rules(settings: QuizSettings, bloom: str) -> dict[str, object]:
+    return {
+        "bloom": bloom,
+        "language": settings.language,
+        "num_questions": settings.num_questions,
+        "difficulty": settings.difficulty,
+        "question_types": list(settings.question_types),
+        "QUESTION_TYPES": list(QUESTION_TYPES),
+        "topic_prompt": settings.topic_prompt or "",
+        "cloze_blank": CLOZE_BLANK,
+        "min_quote_chars": MIN_QUOTE_CHARS,
+    }
+
+
 def repair_prompt_data(
     *,
     mode: Literal["full", "unusable", "partial"],
@@ -621,23 +635,31 @@ def repair_prompt_data(
     kept: Sequence[GeneratedQuestion],
     slices: Mapping[str, str],
     format_instructions: str,
+    settings: QuizSettings,
 ) -> dict[str, object]:
-    """Data for prompts/quiz/repair.jinja. The original prompt is not included."""
+    """Data for prompts/quiz/repair.jinja.
+
+    The rules block is included. The full source list is not.
+    """
     focus = [
         questions[fault.question_index]
         for fault in faults
         if isinstance(fault, QuestionFault)
         and 0 <= fault.question_index < len(questions)
     ]
-    return {
-        "mode": mode,
-        "error": error,
-        "expected_count": expected_count,
-        "kept_stems": [question.stem for question in kept],
-        "excerpts": list(source_excerpts(slices, focus)),
-        "fault_lines": list(_fault_lines(questions, faults)),
-        "format_instructions": format_instructions,
-    }
+    data = quiz_prompt_rules(settings, bloom_for(settings.difficulty))
+    data.update(
+        {
+            "mode": mode,
+            "error": error,
+            "expected_count": expected_count,
+            "kept_stems": [question.stem for question in kept],
+            "excerpts": list(source_excerpts(slices, focus)),
+            "fault_lines": list(_fault_lines(questions, faults)),
+            "format_instructions": format_instructions,
+        }
+    )
+    return data
 
 
 def _validate_generated_key(question: GeneratedQuestion) -> None:
@@ -872,20 +894,11 @@ def template_data(
     slices: Mapping[str, str],
     bloom: str,
 ) -> dict[str, object]:
-    return {
-        "bloom": bloom,
-        "language": settings.language,
-        "num_questions": settings.num_questions,
-        "difficulty": settings.difficulty,
-        "question_types": list(settings.question_types),
-        "QUESTION_TYPES": list(QUESTION_TYPES),
-        "topic_prompt": settings.topic_prompt or "",
-        "cloze_blank": CLOZE_BLANK,
-        "min_quote_chars": MIN_QUOTE_CHARS,
-        "slices": [
-            {"source_id": source_id, "text": text} for source_id, text in slices.items()
-        ],
-    }
+    data = quiz_prompt_rules(settings, bloom)
+    data["slices"] = [
+        {"source_id": source_id, "text": text} for source_id, text in slices.items()
+    ]
+    return data
 
 
 def row_to_sealed(row: object) -> SealedQuestion:

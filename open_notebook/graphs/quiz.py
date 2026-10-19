@@ -128,6 +128,7 @@ async def _full_rewrite(
     slices: dict[str, str],
     format_instructions: str,
     expected_count: int,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     budget.rounds += 1
     budget.full_rewrites += 1
@@ -141,6 +142,7 @@ async def _full_rewrite(
             kept=kept,
             slices=slices,
             format_instructions=format_instructions,
+            settings=settings,
         )
     )
     try:
@@ -160,6 +162,7 @@ async def _partial_round(
     num_questions: int,
     slices: dict[str, str],
     format_instructions: str,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     in_place = len(questions) == num_questions
     expected = len(failing) if in_place else num_questions - len(kept)
@@ -176,6 +179,7 @@ async def _partial_round(
             kept=kept,
             slices=slices,
             format_instructions=format_instructions,
+            settings=settings,
         )
     )
     try:
@@ -207,6 +211,7 @@ async def _first_reply(
     prompt: str,
     slices: dict[str, str],
     format_instructions: str,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     try:
         return load_generated_questions(await ask(prompt))
@@ -229,6 +234,7 @@ async def _first_reply(
             slices=slices,
             format_instructions=format_instructions,
             expected_count=0,
+            settings=settings,
         )
 
 
@@ -241,6 +247,7 @@ async def _questions_with_repair(
     slices: dict[str, str],
     deadline: float | None,
     format_instructions: str,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     """Keep questions that pass. Ask only for failures or missing questions.
 
@@ -260,6 +267,7 @@ async def _questions_with_repair(
         prompt=prompt,
         slices=slices,
         format_instructions=format_instructions,
+        settings=settings,
     )
     while True:
         faults = faults_for(
@@ -304,6 +312,7 @@ async def _questions_with_repair(
                 slices=slices,
                 format_instructions=format_instructions,
                 expected_count=num_questions,
+                settings=settings,
             )
             continue
         questions = await _partial_round(
@@ -315,6 +324,7 @@ async def _questions_with_repair(
             num_questions=num_questions,
             slices=slices,
             format_instructions=format_instructions,
+            settings=settings,
         )
 
 
@@ -352,6 +362,7 @@ async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
             slices=slices,
             deadline=state.get("deadline"),
             format_instructions=parser.get_format_instructions(),
+            settings=settings,
         )
         deck = seal_deck(questions, random.Random(), lambda: str(uuid.uuid4()))
         return {"deck": deck}
