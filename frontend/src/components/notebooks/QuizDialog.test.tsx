@@ -1,4 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+// Radix Select scrolls the chosen row into view. jsdom has no scrollIntoView.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => undefined
+}
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
@@ -30,7 +35,23 @@ vi.mock('@/lib/api/quizzes', () => ({
 }))
 
 vi.mock('@/components/podcasts/ContentSelectionPanel', () => ({
-  ContentSelectionPanel: () => null,
+  ContentSelectionPanel: ({
+    notebooks,
+    selections,
+    onSourceModeChange,
+  }: {
+    notebooks: { id: string }[]
+    selections: Record<string, { sources: Record<string, string> }>
+    onSourceModeChange: (notebookId: string, sourceId: string, mode: string) => void
+  }) => {
+    const notebookId = notebooks[0]?.id ?? ''
+    const mode = selections[notebookId]?.sources['source:1'] ?? 'missing'
+    return (
+      <button type="button" onClick={() => onSourceModeChange(notebookId, 'source:1', 'off')}>
+        {`source-mode:${mode}`}
+      </button>
+    )
+  },
 }))
 
 vi.mock('@/components/sources/SourceDialog', () => ({
@@ -148,6 +169,46 @@ describe('QuizDialog', () => {
 
       await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(true))
     })
+  })
+
+  it('resets the form to the first-open values when New quiz is clicked', async () => {
+    vi.mocked(quizzesApi.list).mockResolvedValue([summary('quiz:live', 'Live')])
+    vi.mocked(quizzesApi.get).mockResolvedValue(play('quiz:live', 'Live', 'stem-live', false))
+    render(dialog(true))
+
+    expect(await screen.findByText('stem-live')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'quiz.newQuiz' }))
+
+    const count = await screen.findByLabelText('quiz.numQuestions')
+    fireEvent.change(count, { target: { value: '8' } })
+    fireEvent.change(screen.getByLabelText('quiz.topic'), { target: { value: 'Alt' } })
+    fireEvent.change(screen.getByLabelText('quiz.language'), { target: { value: 'fr' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'quiz.typeMc' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'source-mode:full' }))
+    const difficulty = screen.getByRole('combobox')
+    difficulty.focus()
+    fireEvent.keyDown(difficulty, { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: 'quiz.hard' }))
+
+    expect(screen.getByLabelText('quiz.numQuestions')).toHaveValue(8)
+    expect(screen.getByLabelText('quiz.topic')).toHaveValue('Alt')
+    expect(screen.getByLabelText('quiz.language')).toHaveValue('fr')
+    expect(screen.getByRole('checkbox', { name: 'quiz.typeMc' })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'source-mode:off' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toHaveTextContent('quiz.hard')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Live' }))
+    expect(await screen.findByText('stem-live')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'quiz.newQuiz' }))
+
+    expect(await screen.findByLabelText('quiz.numQuestions')).toHaveValue(5)
+    expect(screen.getByLabelText('quiz.topic')).toHaveValue('')
+    expect(screen.getByLabelText('quiz.language')).toHaveValue('en-US')
+    expect(screen.getByRole('combobox')).toHaveTextContent('quiz.medium')
+    for (const name of ['quiz.typeMc', 'quiz.typeMulti', 'quiz.typeShort', 'quiz.typeCloze']) {
+      expect(screen.getByRole('checkbox', { name })).toBeChecked()
+    }
+    expect(screen.getByRole('button', { name: 'source-mode:full' })).toBeInTheDocument()
   })
 
   it('opens the form from a quiz in progress and from the score', async () => {

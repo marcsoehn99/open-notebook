@@ -74,6 +74,25 @@ interface QuizDialogProps {
 
 const QUESTION_TYPES: QuestionType[] = ['mc', 'multi', 'short', 'cloze']
 
+function initialQuestionTypes(): Record<QuestionType, boolean> {
+  return { mc: true, multi: true, short: true, cloze: true }
+}
+
+function defaultNotebookSelection(
+  sourceList: SourceListResponse[],
+  noteList: NoteResponse[]
+): NotebookSelection {
+  const sourceModes: Record<string, SourceMode> = {}
+  for (const source of sourceList) {
+    sourceModes[source.id] = 'full'
+  }
+  const noteModes: Record<string, SourceMode> = {}
+  for (const note of noteList) {
+    noteModes[note.id] = 'off'
+  }
+  return { sources: sourceModes, notes: noteModes }
+}
+
 function attemptKey(quizId: string) {
   return `quiz-attempt:${quizId}`
 }
@@ -208,12 +227,7 @@ export function QuizDialog({
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [topic, setTopic] = useState('')
   const [quizLanguage, setQuizLanguage] = useState(language)
-  const [types, setTypes] = useState<Record<QuestionType, boolean>>({
-    mc: true,
-    multi: true,
-    short: true,
-    cloze: true,
-  })
+  const [types, setTypes] = useState<Record<QuestionType, boolean>>(initialQuestionTypes)
   const [selections, setSelections] = useState<Record<string, NotebookSelection>>({})
   const [expanded, setExpanded] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
@@ -253,9 +267,12 @@ export function QuizDialog({
     }
     setSelections((prev) => {
       const previous = prev[notebook.id]
+      if (!previous) {
+        return { ...prev, [notebook.id]: defaultNotebookSelection(sources, notes) }
+      }
       const sourceModes: Record<string, SourceMode> = {}
       sources.forEach((source) => {
-        sourceModes[source.id] = previous?.sources[source.id] ?? 'full'
+        sourceModes[source.id] = previous.sources[source.id] ?? 'full'
       })
       const noteModes: Record<string, SourceMode> = {}
       notes.forEach((note) => {
@@ -369,6 +386,15 @@ export function QuizDialog({
 
   function showForm() {
     setPane({ kind: 'form' })
+    setNumQuestions(5)
+    setDifficulty('medium')
+    setTopic('')
+    setQuizLanguage(language)
+    setTypes(initialQuestionTypes())
+    setSelections((prev) => ({
+      ...prev,
+      [notebook.id]: defaultNotebookSelection(sources, notes),
+    }))
   }
 
   function openQuiz(quizId: string) {
