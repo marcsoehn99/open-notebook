@@ -9,6 +9,7 @@ import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { ModalProvider } from '@/components/providers/ModalProvider'
 import { CreateDialogsProvider } from '@/lib/hooks/use-create-dialogs'
 import { CommandPalette } from '@/components/common/CommandPalette'
+import { QuizNoticeNavigator } from '@/lib/quiz-notice-navigator'
 
 export default function DashboardLayout({
   children,
@@ -57,6 +58,7 @@ export default function DashboardLayout({
         {children}
         <ModalProvider />
         <CommandPalette />
+        <QuizNoticeNavigator />
       </CreateDialogsProvider>
     </ErrorBoundary>
   )
