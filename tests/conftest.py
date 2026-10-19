@@ -15,6 +15,10 @@ import pytest
 
 # python-dotenv skips load_dotenv while this is set, including api/main.py.
 os.environ["PYTHON_DOTENV_DISABLED"] = "1"
+# Vendored encoding. Set before open_notebook.config reads this name.
+os.environ["TIKTOKEN_CACHE_DIR"] = str(
+    Path(__file__).resolve().parent / "fixtures" / "tiktoken-cache"
+)
 # Empty string, not unset, so a later load cannot turn password auth back on.
 os.environ["OPEN_NOTEBOOK_PASSWORD"] = ""
 
@@ -78,7 +82,7 @@ sys.path.insert(0, str(project_root))
 
 
 def _block_tiktoken_download() -> None:
-    """The encoding file is not in the repo. Tests use the offline token-count fallback."""
+    """A cache miss must not fetch the encoding. The vendored file is the normal path."""
     import tiktoken.load as tiktoken_load
 
     real_read_file = tiktoken_load.read_file
