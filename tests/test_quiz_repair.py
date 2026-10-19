@@ -1,6 +1,8 @@
 """Quiz repair rewrites failing questions and keeps the ones that passed."""
 
+import asyncio
 import json
+import time
 
 import pytest
 from loguru import logger
@@ -80,6 +82,51 @@ class _ClockedModel(_ScriptedModel):
         return await super().ainvoke(prompt)
 
 
+class _HangingRepair(_ScriptedModel):
+    def __init__(self, replies: list[object], hang_seconds: float) -> None:
+        super().__init__(replies)
+        self.hang_seconds = hang_seconds
+        self.cancelled = False
+
+    async def ainvoke(self, prompt: str) -> _Message:
+        index = len(self.prompts)
+        self.prompts.append(prompt)
+        if index > 0:
+            try:
+                await asyncio.sleep(self.hang_seconds)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+        return _Message(self._replies[index])
+
+
+class _RetryModel(_ScriptedModel):
+    def __init__(
+        self,
+        replies: list[object],
+        shared: dict[str, list[int]] | None = None,
+    ) -> None:
+        super().__init__(replies)
+        self.max_retries = 5
+        self._shared = shared if shared is not None else {"attempts": []}
+
+    def model_copy(
+        self, *, update: dict[str, object] | None = None, deep: bool = False
+    ):
+        del deep
+        cloned = _RetryModel(self._replies, self._shared)
+        cloned.prompts = self.prompts
+        cloned.max_retries = self.max_retries
+        retries = None if update is None else update.get("max_retries")
+        if isinstance(retries, int):
+            cloned.max_retries = retries
+        return cloned
+
+    async def ainvoke(self, prompt: str) -> _Message:
+        self._shared["attempts"].append(self.max_retries)
+        return await super().ainvoke(prompt)
+
+
 async def _run(
     monkeypatch: pytest.MonkeyPatch,
     replies: list[object],
@@ -87,6 +134,7 @@ async def _run(
     deadline: float | None = None,
     slices: dict[str, str] | None = None,
     model: _ScriptedModel | None = None,
+    settings: object | None = None,
 ):
     scripted = model or _ScriptedModel(replies)
     seen: dict[str, object] = {}
@@ -103,7 +151,7 @@ async def _run(
         "quiz_id": "quiz:1",
         "model_id": "model:1",
         "slices": slices or {SOURCE: SLICE},
-        "settings": _settings(),
+        "settings": _settings() if settings is None else settings,
     }
     if deadline is not None:
         state["deadline"] = deadline
@@ -204,6 +252,7 @@ async def test_deck_with_no_keepable_question_is_rewritten_once(
     )
     assert len(prompts) == 2
     assert "No question could be kept" in prompts[1]
+    assert "Ask 2 questions in en." in prompts[1]
     assert "exactly 1" not in prompts[1]
     assert "Name the city." in prompts[1]
     assert "Name the river." in prompts[1]
@@ -253,6 +302,11 @@ async def test_unreadable_first_reply_is_rewritten_without_the_original_prompt(
     )
     assert len(prompts) == 2
     assert "The previous JSON failed validation" in prompts[1]
+    assert "Ask 2 questions in en." in prompts[1]
+    assert "Use only these question types: ['short']." in prompts[1]
+    assert "Difficulty is medium." in prompts[1]
+    assert "have to apply the material." in prompts[1]
+    assert "at least 15 characters" in prompts[1]
     assert "Write a quiz from the source text below." not in prompts[1]
     assert [card.stem for card in result["deck"]] == [
         "Name the city.",
@@ -419,6 +473,102 @@ async def test_deadline_keeps_valid_questions_without_a_timeout(
     assert clock.t <= QUIZ_JOB_TIMEOUT_SECONDS
     assert any("quiz repair skipped" in message for message in messages)
     assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+@pytest.mark.asyncio
+async def test_repair_call_stops_when_the_job_deadline_is_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("open_notebook.graphs.quiz.llm_timeout_seconds", lambda: 0.05)
+    good = _question("Name the city.", GOOD_QUOTE)
+    bad = _question("Name the river.", BAD_QUOTE)
+    model = _HangingRepair([_deck(good, bad), _deck(bad)], hang_seconds=1.5)
+    messages, sink = _capture_warnings()
+    started = time.monotonic()
+    try:
+        result, prompts, _kwargs = await _run(
+            monkeypatch,
+            [],
+            deadline=time.monotonic() + 0.6,
+            model=model,
+        )
+    finally:
+        logger.remove(sink)
+    assert time.monotonic() - started < 2
+    assert model.cancelled
+    assert len(prompts) == 2
+    assert any("quiz repair skipped" in message for message in messages)
+    assert [card.stem for card in result["deck"]] == ["Name the city."]
+
+
+@pytest.mark.asyncio
+async def test_quiz_call_uses_one_http_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _question("Name the city.", GOOD_QUOTE)
+    other = _question("Name the river.", RIVER_QUOTE)
+    model = _RetryModel([_deck(good, other)])
+    result, prompts, _kwargs = await _run(monkeypatch, [], model=model)
+    assert model._shared["attempts"] == [1]
+    assert len(prompts) == 1
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
+
+
+def _mc(stem: str, quote: str) -> dict[str, object]:
+    return {
+        "type": "mc",
+        "stem": stem,
+        "options": ["Paris", "Lyon"],
+        "correct_indexes": [0],
+        "explanation": "The sentence names it.",
+        "quote": quote,
+        "source_id": SOURCE,
+    }
+
+
+def _german_mc_settings():
+    return parse_settings(
+        source_ids=[SOURCE],
+        num_questions=2,
+        difficulty="medium",
+        topic_prompt="Hauptstadt",
+        question_types=["mc"],
+        language="de",
+        model_id="model:quiz",
+    )
+
+
+@pytest.mark.asyncio
+async def test_repair_prompt_keeps_language_type_difficulty_and_topic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    good = _mc("Name the city.", GOOD_QUOTE)
+    bad = _mc("Name the river.", BAD_QUOTE)
+    fixed = _mc("Name the river.", RIVER_QUOTE)
+    result, prompts, _kwargs = await _run(
+        monkeypatch,
+        [_deck(good, bad), _deck(fixed)],
+        settings=_german_mc_settings(),
+    )
+    repair = prompts[1]
+    assert len(prompts) == 2
+    assert "The questions are in de." in repair
+    assert "Use only these question types: ['mc']." in repair
+    assert "Difficulty is medium." in repair
+    assert "have to apply the material." in repair
+    assert "Focus on this topic: Hauptstadt" in repair
+    assert "verbatim substring" in repair
+    assert "at least 15 characters" in repair
+    assert "exactly 1" in repair
+    assert "Ask 2 questions" not in repair
+    assert "Write a quiz from the source text below." not in repair
+    assert [card.stem for card in result["deck"]] == [
+        "Name the city.",
+        "Name the river.",
+    ]
 
 
 def _source_near_budget() -> str:

@@ -1,3 +1,4 @@
+import asyncio
 import random
 import time
 import uuid
@@ -41,6 +42,7 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     QuizModelOutputError,
     QuizPromptTooLargeError,
+    QuizTimeoutError,
 )
 from open_notebook.utils import clean_thinking_content, token_count
 from open_notebook.utils.error_classifier import classify_error
@@ -87,8 +89,28 @@ def _refuse_oversized(prompt: str) -> None:
         )
 
 
-async def _reply(model: BaseChatModel, prompt: str) -> str:
-    message = await model.ainvoke(prompt)
+def _call_timeout(budget: RepairBudget) -> float | None:
+    if budget.deadline is None:
+        return None
+    return budget.deadline - _now()
+
+
+def _one_http_attempt(model: BaseChatModel) -> BaseChatModel:
+    # langchain_mistralai stops after max_retries attempts. The default of 5
+    # lets one ainvoke spend five HTTP timeouts.
+    if not isinstance(getattr(model, "max_retries", None), int):
+        return model
+    copy = getattr(model, "model_copy", None)
+    if not callable(copy):
+        return model
+    return copy(update={"max_retries": 1})
+
+
+async def _reply(model: BaseChatModel, prompt: str, *, timeout: float | None) -> str:
+    if timeout is None:
+        message = await model.ainvoke(prompt)
+    else:
+        message = await asyncio.wait_for(model.ainvoke(prompt), timeout=max(0, timeout))
     return clean_thinking_content(extract_text_content(message.content))
 
 
@@ -109,7 +131,10 @@ def _make_ask(model: BaseChatModel, budget: RepairBudget) -> Ask:
     async def ask(text: str) -> str:
         _refuse_oversized(text)
         started = _now()
-        reply = await _reply(model, text)
+        try:
+            reply = await _reply(model, text, timeout=_call_timeout(budget))
+        except TimeoutError as error:
+            raise QuizTimeoutError("quiz generation timed out") from error
         budget.note_call(_now() - started)
         return reply
 
@@ -128,6 +153,7 @@ async def _full_rewrite(
     slices: dict[str, str],
     format_instructions: str,
     expected_count: int,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     budget.rounds += 1
     budget.full_rewrites += 1
@@ -141,6 +167,7 @@ async def _full_rewrite(
             kept=kept,
             slices=slices,
             format_instructions=format_instructions,
+            settings=settings,
         )
     )
     try:
@@ -160,6 +187,7 @@ async def _partial_round(
     num_questions: int,
     slices: dict[str, str],
     format_instructions: str,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     in_place = len(questions) == num_questions
     expected = len(failing) if in_place else num_questions - len(kept)
@@ -176,6 +204,7 @@ async def _partial_round(
             kept=kept,
             slices=slices,
             format_instructions=format_instructions,
+            settings=settings,
         )
     )
     try:
@@ -207,6 +236,7 @@ async def _first_reply(
     prompt: str,
     slices: dict[str, str],
     format_instructions: str,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     try:
         return load_generated_questions(await ask(prompt))
@@ -229,6 +259,7 @@ async def _first_reply(
             slices=slices,
             format_instructions=format_instructions,
             expected_count=0,
+            settings=settings,
         )
 
 
@@ -241,6 +272,7 @@ async def _questions_with_repair(
     slices: dict[str, str],
     deadline: float | None,
     format_instructions: str,
+    settings: QuizSettings,
 ) -> tuple[GeneratedQuestion, ...]:
     """Keep questions that pass. Ask only for failures or missing questions.
 
@@ -253,13 +285,14 @@ async def _questions_with_repair(
         deadline=deadline,
         call_estimate=llm_timeout_seconds(),
     )
-    ask = _make_ask(model, budget)
+    ask = _make_ask(_one_http_attempt(model), budget)
     questions = await _first_reply(
         ask,
         budget,
         prompt=prompt,
         slices=slices,
         format_instructions=format_instructions,
+        settings=settings,
     )
     while True:
         faults = faults_for(
@@ -290,32 +323,44 @@ async def _questions_with_repair(
                 "deadline, and no question is valid."
             )
             raise QuizModelOutputError(faults[0].reason)
-        if nothing_kept(questions, faults):
-            if budget.full_rewrites >= 1:
-                raise QuizModelOutputError(faults[0].reason)
-            questions = await _full_rewrite(
+        try:
+            if nothing_kept(questions, faults):
+                if budget.full_rewrites >= 1:
+                    raise QuizModelOutputError(faults[0].reason)
+                questions = await _full_rewrite(
+                    ask,
+                    budget,
+                    mode="unusable",
+                    error=faults[0].reason,
+                    questions=questions,
+                    faults=faults,
+                    kept=(),
+                    slices=slices,
+                    format_instructions=format_instructions,
+                    expected_count=num_questions,
+                    settings=settings,
+                )
+                continue
+            questions = await _partial_round(
                 ask,
                 budget,
-                mode="unusable",
-                error=faults[0].reason,
                 questions=questions,
-                faults=faults,
-                kept=(),
+                failing=failing,
+                kept=kept,
+                num_questions=num_questions,
                 slices=slices,
                 format_instructions=format_instructions,
-                expected_count=num_questions,
+                settings=settings,
             )
-            continue
-        questions = await _partial_round(
-            ask,
-            budget,
-            questions=questions,
-            failing=failing,
-            kept=kept,
-            num_questions=num_questions,
-            slices=slices,
-            format_instructions=format_instructions,
-        )
+        except QuizTimeoutError:
+            if kept:
+                logger.warning(
+                    "quiz repair skipped: "
+                    "the model call reached the job deadline. "
+                    f"Keeping {len(kept)} valid question(s)."
+                )
+                return tuple(kept)
+            raise
 
 
 async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
@@ -352,6 +397,7 @@ async def generate_node(state: QuizState, config: RunnableConfig) -> dict:
             slices=slices,
             deadline=state.get("deadline"),
             format_instructions=parser.get_format_instructions(),
+            settings=settings,
         )
         deck = seal_deck(questions, random.Random(), lambda: str(uuid.uuid4()))
         return {"deck": deck}

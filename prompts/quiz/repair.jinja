@@ -11,6 +11,7 @@ Return a JSON object whose questions array has exactly {{ expected_count }} ques
 Do not include questions that already passed.
 Return only the JSON object.
 {% endif %}
+{% include "quiz/rules.jinja" %}
 {% if kept_stems %}
 Do not repeat these stems:
 {% for stem in kept_stems %}
