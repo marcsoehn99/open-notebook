@@ -84,7 +84,6 @@
     "brace-expansion": "1.1.21",
     "ajv": "6.15.0",
     "@eslint/plugin-kit": "0.7.2",
-    "postcss": "8.5.23",
-    "vite": "7.3.7"
+    "postcss": "8.5.23"
   }
 }
