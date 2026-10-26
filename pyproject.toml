@@ -112,4 +112,5 @@ constraint-dependencies = [
     "certifi>=2026.10.19",
     "pillow>=13.0.0",
     "soupsieve>=2.9",
+    "fastmcp>=3.4.10,<4",
 ]
