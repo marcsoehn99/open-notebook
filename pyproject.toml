@@ -113,6 +113,6 @@ constraint-dependencies = [
     "pillow>=13.0.0",
     "soupsieve>=2.9",
     "fastmcp>=3.4.10,<4",
-    "authlib>=1.9.1",
+    "authlib>=1.9.1,<2",
     "dnspython>=2.9.0",
 ]
