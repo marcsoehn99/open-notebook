@@ -115,4 +115,5 @@ constraint-dependencies = [
     "fastmcp>=3.4.10,<4",
     "authlib>=1.9.1,<2",
     "dnspython>=2.9.0",
+    "pyasn1>=0.6.5",
 ]
