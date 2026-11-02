@@ -24,7 +24,7 @@ A baseline is for code that was already there. New code does not get one unless 
 Every rule has a test that fails on a bad fixture and passes on a good one.
 
 - Python: [`tests/test_lint_rules.py`](../../tests/test_lint_rules.py), run with `uv run pytest tests/test_lint_rules.py`.
-- ESLint: [`frontend/src/lint-rules/reviewer-rules.test.ts`](../../frontend/src/lint-rules/reviewer-rules.test.ts), run with `npm run test -- src/lint-rules/reviewer-rules.test.ts` inside `frontend/`.
+- ESLint: [`frontend/src/lint-rules/reviewer-rules.test.ts`](../../frontend/src/lint-rules/reviewer-rules.test.ts), run with `npm run test -- src/lint-rules/reviewer-rules.test.ts` inside `frontend/`. That folder is excluded from `frontend/tsconfig.json`. The Docker frontend stage only copies `frontend/`, and the fixtures import `lint-rules/` from the repo root, so Next must not typecheck them.
 
 ## CI
 
