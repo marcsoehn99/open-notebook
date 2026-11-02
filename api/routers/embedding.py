@@ -68,6 +68,7 @@ async def embed_content(embed_request: EmbedRequest):
 
             except Exception as e:
                 logger.error(f"Failed to submit async embedding command: {e}")
+                # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
                 raise HTTPException(
                     status_code=500, detail=f"Failed to queue embedding: {str(e)}"
                 )
@@ -124,6 +125,7 @@ async def embed_content(embed_request: EmbedRequest):
         logger.error(
             f"Error embedding {embed_request.item_type} {embed_request.item_id}: {str(e)}"
         )
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error embedding content: {str(e)}"
         )

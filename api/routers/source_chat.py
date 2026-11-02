@@ -129,6 +129,7 @@ async def create_source_chat_session(
         raise
     except Exception as e:
         logger.error(f"Error creating source chat session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error creating source chat session: {str(e)}"
         )
@@ -189,6 +190,7 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
         raise
     except Exception as e:
         logger.error(f"Error fetching source chat sessions: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching source chat sessions: {str(e)}"
         )
@@ -256,6 +258,7 @@ async def get_source_chat_session(
         raise
     except Exception as e:
         logger.error(f"Error fetching source chat session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching source chat session: {str(e)}"
         )
@@ -308,6 +311,7 @@ async def update_source_chat_session(
         raise
     except Exception as e:
         logger.error(f"Error updating source chat session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error updating source chat session: {str(e)}"
         )
@@ -343,6 +347,7 @@ async def delete_source_chat_session(
         raise
     except Exception as e:
         logger.error(f"Error deleting source chat session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error deleting source chat session: {str(e)}"
         )
@@ -478,4 +483,5 @@ async def send_message_to_source_chat(
         raise
     except Exception as e:
         logger.error(f"Error sending message to source chat: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error sending message: {str(e)}")

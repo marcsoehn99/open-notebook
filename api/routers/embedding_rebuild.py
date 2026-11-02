@@ -120,6 +120,7 @@ async def start_rebuild(request: RebuildRequest):
     except Exception as e:
         logger.error(f"Failed to start rebuild: {e}")
         logger.exception(e)
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Failed to start rebuild operation: {str(e)}"
         )
@@ -194,6 +195,7 @@ async def get_rebuild_status(command_id: str):
     except Exception as e:
         logger.error(f"Failed to get rebuild status: {e}")
         logger.exception(e)
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Failed to get rebuild status: {str(e)}"
         )

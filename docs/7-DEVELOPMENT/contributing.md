@@ -151,6 +151,7 @@ CI (`.github/workflows/test.yml`) runs these checks on every PR. Run them locall
 # Backend (repo root)
 uv run ruff check .
 uv run ruff format --check .     # CI fails on unformatted code; fix with: uv run ruff format .
+uv run python lint-rules/check.py --base origin/main
 uv run python -m mypy .
 uv run pytest tests/
 

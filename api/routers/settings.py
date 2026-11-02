@@ -97,6 +97,7 @@ async def update_settings(settings_update: SettingsUpdate):
     except HTTPException:
         raise
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise

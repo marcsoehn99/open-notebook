@@ -50,6 +50,7 @@ async def get_transformations():
         raise
     except Exception as e:
         logger.error(f"Error fetching transformations: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching transformations: {str(e)}"
         )
@@ -80,11 +81,13 @@ async def create_transformation(transformation_data: TransformationCreate):
     except HTTPException:
         raise
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise
     except Exception as e:
         logger.error(f"Error creating transformation: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error creating transformation: {str(e)}"
         )
@@ -131,6 +134,7 @@ async def execute_transformation(execute_request: TransformationExecuteRequest):
         raise  # Let global exception handlers return proper status codes
     except Exception as e:
         logger.error(f"Error executing transformation: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error executing transformation: {str(e)}"
         )
@@ -152,6 +156,7 @@ async def get_default_prompt():
         raise
     except Exception as e:
         logger.error(f"Error fetching default prompt: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching default prompt: {str(e)}"
         )
@@ -177,6 +182,7 @@ async def update_default_prompt(prompt_update: DefaultPromptUpdate):
         raise
     except Exception as e:
         logger.error(f"Error updating default prompt: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error updating default prompt: {str(e)}"
         )
@@ -199,6 +205,7 @@ async def get_transformation(transformation_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching transformation {transformation_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching transformation: {str(e)}"
         )
@@ -243,11 +250,13 @@ async def update_transformation(
     except HTTPException:
         raise
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise
     except Exception as e:
         logger.error(f"Error updating transformation {transformation_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error updating transformation: {str(e)}"
         )
@@ -270,6 +279,7 @@ async def delete_transformation(transformation_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting transformation {transformation_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error deleting transformation: {str(e)}"
         )

@@ -191,6 +191,7 @@ async def generate_embeddings(
                         f"failed after {EMBEDDING_MAX_RETRIES} attempts "
                         f"using model '{model_name}'{cmd_context}: {e}"
                     )
+                    # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
                     raise RuntimeError(
                         f"Failed to generate embeddings using model '{model_name}' "
                         f"(batch {batch_idx + 1}/{total_batches}, "

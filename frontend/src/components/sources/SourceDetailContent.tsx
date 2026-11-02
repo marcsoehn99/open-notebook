@@ -261,6 +261,9 @@ function SourceDetailContentInner({
       // The mutation invalidates the source queries (list + detail); patch the
       // detail cache immediately so the title doesn't flash back while the
       // refetch is in flight.
+      // Baseline: pre-existing cache write in the component, not the quiz dialog.
+      // 2026-10-19-quiz-neu.md Q-S1. New call sites belong in src/lib/hooks.
+      // eslint-disable-next-line reviewer/no-set-query-data-outside-hooks
       queryClient.setQueryData<SourceDetailResponse>(
         QUERY_KEYS.source(sourceId),
         (previous) => (previous ? { ...previous, title } : previous)

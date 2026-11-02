@@ -120,6 +120,7 @@ async def get_notebooks(
         raise
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching notebooks: {str(e)}"
         )
@@ -146,6 +147,7 @@ async def create_notebook(notebook: NotebookCreate):
             note_count=0,  # New notebook has no notes
         )
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
@@ -153,6 +155,7 @@ async def create_notebook(notebook: NotebookCreate):
         raise
     except Exception as e:
         logger.error(f"Error creating notebook: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error creating notebook: {str(e)}"
         )
@@ -229,6 +232,7 @@ async def get_notebook_delete_preview(notebook_id: str):
         raise
     except Exception as e:
         logger.error(f"Error getting delete preview for notebook {notebook_id}: {e}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching notebook deletion preview: {str(e)}",
@@ -270,6 +274,7 @@ async def get_notebook(notebook_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching notebook: {str(e)}"
         )
@@ -331,11 +336,13 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise
     except Exception as e:
         logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error updating notebook: {str(e)}"
         )
@@ -379,6 +386,7 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         logger.error(
             f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
         )
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error linking source to notebook: {str(e)}"
         )
@@ -411,6 +419,7 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
         logger.error(
             f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}"
         )
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error removing source from notebook: {str(e)}"
         )
@@ -453,6 +462,7 @@ async def delete_notebook(
         raise
     except Exception as e:
         logger.error(f"Error deleting notebook {notebook_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error deleting notebook: {str(e)}"
         )

@@ -204,6 +204,7 @@ async def repo_update(
         #     return [_return_data(item) for item in result]
         return parse_record_ids(result)
     except Exception as e:
+        # on-lint: allow-raw-exception-text — pre-existing repository error (2026-10-16-quiz-me.md S4 baseline).
         raise RuntimeError(f"Failed to update record: {str(e)}")
 
 
@@ -215,6 +216,7 @@ async def repo_delete(record_id: Union[str, RecordID]):
             return await connection.delete(ensure_record_id(record_id))
     except Exception as e:
         logger.exception(e)
+        # on-lint: allow-raw-exception-text — pre-existing repository error (2026-10-16-quiz-me.md S4 baseline).
         raise RuntimeError(f"Failed to delete record: {str(e)}")
 
 
