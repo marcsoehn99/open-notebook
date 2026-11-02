@@ -22,7 +22,7 @@ Or all at once: `make start-all` (status: `make status`, stop: `make stop-all`).
 - Tests: `uv run pytest tests/`
 - Python lint/format/typecheck: `uv run ruff check . --fix` · `uv run ruff format .` · `uv run python -m mypy .`
 - Frontend (inside `frontend/`): `npm run lint` · `npm run test` · `npm run build`
-- CI runs `uv run ruff check .`, `uv run ruff format --check .`, mypy, pytest and, in `frontend/`, `npm run lint`, `npm run test:coverage` and `npm run build`; all must pass
+- CI runs `uv run ruff check .`, `uv run ruff format --check .`, `uv run python lint-rules/check.py`, mypy, pytest and, in `frontend/`, `npm run lint`, `npm run test:coverage` and `npm run build`; all must pass. Custom rules: [lint-rules.md](docs/7-DEVELOPMENT/lint-rules.md)
 - Docker release: `make docker-release` (see `.github/RELEASE_PROCESS.md`)
 
 ## Hard rules

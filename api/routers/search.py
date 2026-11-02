@@ -61,9 +61,11 @@ async def search_knowledge_base(search_request: SearchRequest):
         )
 
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except DatabaseOperationError as e:
         logger.error(f"Database error during search: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
     except HTTPException:
         raise
@@ -71,6 +73,7 @@ async def search_knowledge_base(search_request: SearchRequest):
         raise
     except Exception as e:
         logger.error(f"Unexpected error during search: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
@@ -196,6 +199,7 @@ async def ask_knowledge_base(ask_request: AskRequest):
         raise
     except Exception as e:
         logger.error(f"Error in ask endpoint: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")
 
 
@@ -264,4 +268,5 @@ async def ask_knowledge_base_simple(ask_request: AskRequest):
         raise
     except Exception as e:
         logger.error(f"Error in ask simple endpoint: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Ask operation failed: {str(e)}")

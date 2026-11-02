@@ -22,6 +22,7 @@ The normative rules for coding agents (and humans in a hurry) are in the `AGENTS
 | [Frontend](frontend.md) | Next.js layers and data flows |
 | [API Reference](api-reference.md) | `/api` prefix, auth, async jobs, streaming, errors; the live schema is at `/docs` |
 | [Code Standards](code-standards.md) | Tooling, async, database access, error handling |
+| [Lint rules](lint-rules.md) | Custom reviewer rules: where they live, how to add one, how to test it |
 | [Testing](testing.md) | Test layout, commands and patterns |
 | [Langfuse evaluation datasets](langfuse-evaluation-datasets.md) | Concept for a later Quiz me feature. A dataset item is a question about sources plus the expected answer |
 | [Security](security.md) | Query, template and file-handling safety; secrets; review checklist |

@@ -16,6 +16,7 @@ from open_notebook.domain.quiz import (
     McOption,
     McSubmission,
     MultiSubmission,
+    Quiz,
     QuizPending,
     QuizReady,
     SealedCloze,
@@ -528,3 +529,9 @@ async def test_generate_node_repairs_invalid_json_once(monkeypatch):
     assert len(prompts) == 2
     assert "failed validation" in prompts[1]
     assert "Expecting value" not in prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_quiz_get_rejects_a_foreign_record_prefix() -> None:
+    with pytest.raises(InvalidInputError, match="quiz:"):
+        await Quiz.get("source:x")

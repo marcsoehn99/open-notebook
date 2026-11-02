@@ -84,6 +84,7 @@ async def save_insight_as_note(insight_id: str, request: SaveAsNoteRequest):
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise

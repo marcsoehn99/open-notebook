@@ -49,6 +49,7 @@ async def _revalidate_config_urls(config: dict, provider: str) -> None:
             try:
                 await validate_url(value, provider)
             except ValueError as e:
+                # on-lint: allow-raw-exception-text — validate_url already raises a user-safe message (2026-10-16-quiz-me.md S4 baseline).
                 raise ConfigurationError(str(e)) from e
 
 

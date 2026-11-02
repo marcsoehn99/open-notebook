@@ -49,6 +49,7 @@ async def get_notes(
         raise
     except Exception as e:
         logger.error(f"Error fetching notes: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error fetching notes: {str(e)}")
 
 
@@ -110,11 +111,13 @@ async def create_note(note_data: NoteCreate):
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise
     except Exception as e:
         logger.error(f"Error creating note: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error creating note: {str(e)}")
 
 
@@ -140,6 +143,7 @@ async def get_note(note_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching note {note_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error fetching note: {str(e)}")
 
 
@@ -178,11 +182,13 @@ async def update_note(note_id: str, note_update: NoteUpdate):
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Note not found")
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise
     except Exception as e:
         logger.error(f"Error updating note {note_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error updating note: {str(e)}")
 
 
@@ -203,4 +209,5 @@ async def delete_note(note_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting note {note_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error deleting note: {str(e)}")

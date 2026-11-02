@@ -207,6 +207,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"CRITICAL: Database migration failed: {str(e)}")
         logger.exception(e)
         # Fail fast - don't start the API with an outdated database schema
+        # on-lint: allow-raw-exception-text — startup log, not an HTTP response (2026-10-16-quiz-me.md S4 baseline).
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
 
     logger.success("API initialization completed successfully")

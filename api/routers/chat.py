@@ -134,6 +134,7 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
         raise
     except Exception as e:
         logger.error(f"Error fetching chat sessions: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching chat sessions: {str(e)}"
         )
@@ -176,6 +177,7 @@ async def create_session(request: CreateSessionRequest):
         raise
     except Exception as e:
         logger.error(f"Error creating chat session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error creating chat session: {str(e)}"
         )
@@ -234,6 +236,7 @@ async def get_session(session_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error fetching session: {str(e)}")
 
 
@@ -281,6 +284,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         raise
     except Exception as e:
         logger.error(f"Error updating session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error updating session: {str(e)}")
 
 
@@ -302,6 +306,7 @@ async def delete_session(session_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting session: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
 
@@ -389,6 +394,7 @@ async def execute_chat(request: ExecuteChatRequest):
             f"  Model override: {request.model_override}\n"
             f"  Traceback:\n{traceback.format_exc()}"
         )
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error executing chat: {str(e)}")
 
 
@@ -417,4 +423,5 @@ async def build_context(request: BuildContextRequest):
         raise
     except Exception as e:
         logger.error(f"Error building context: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error building context: {str(e)}")

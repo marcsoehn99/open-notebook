@@ -439,6 +439,7 @@ async def _build_content_state(
         try:
             await validate_url(source_data.url, "source")
         except ValueError as e:
+            # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
             raise HTTPException(status_code=400, detail=str(e))
         content_state["url"] = source_data.url
     elif source_data.type == "upload":
@@ -693,6 +694,7 @@ async def create_source(
     except InvalidInputError as e:
         # Clean up uploaded file on validation errors if we created it
         _cleanup_uploaded_file(file_path, upload_file)
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         # Clean up uploaded file before the global handlers map the error
@@ -923,6 +925,7 @@ async def update_source(source_id: str, source_update: SourceUpdate):
     except HTTPException:
         raise
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise

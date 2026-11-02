@@ -442,6 +442,7 @@ async def generate_podcast_command(
         if not hint:
             raise
         logger.error(f"Podcast generation failed: {e}")
+        # on-lint: allow-raw-exception-text — the hint is appended to the parser text the job is meant to show (2026-10-16-quiz-me.md S4 baseline).
         raise ValueError(f"{e}\n\nNOTE: {hint}") from e
 
     except Exception as e:

@@ -316,6 +316,7 @@ class Notebook(ObjectModel):
         except Exception as e:
             logger.error(f"Error deleting notebook {self.id}: {e}")
             logger.exception(e)
+            # on-lint: allow-raw-exception-text — pre-existing delete path (2026-10-16-quiz-me.md S4 baseline).
             raise DatabaseOperationError(f"Failed to delete notebook: {e}")
 
 
@@ -513,6 +514,7 @@ class Source(ObjectModel):
         except Exception as e:
             logger.error(f"Error fetching chunks count for source {self.id}: {str(e)}")
             logger.exception(e)
+            # on-lint: allow-raw-exception-text — pre-existing chunk count path (2026-10-16-quiz-me.md S4 baseline).
             raise DatabaseOperationError(f"Failed to count chunks for source: {str(e)}")
 
     async def get_insights(self) -> List[SourceInsight]:

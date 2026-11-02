@@ -82,7 +82,7 @@ async def _build_deck(quiz: Quiz):
     slices = truncate_slices(texts, QUIZ_SOURCE_TOKEN_BUDGET, token_count)
     try:
         result = await asyncio.wait_for(
-            quiz_graph.ainvoke(
+            quiz_graph.ainvoke(  # type: ignore[call-overload]
                 {
                     "quiz_id": str(quiz.id),
                     "model_id": str(quiz.model_id),

@@ -509,4 +509,5 @@ async def build_source_context(
         }
     except Exception as e:
         logger.error(f"Error building context: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing context error (2026-10-16-quiz-me.md S4 baseline).
         raise DatabaseOperationError(f"Failed to build context: {str(e)}")

@@ -47,6 +47,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Set up uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -64,6 +66,12 @@ jobs:
 
       - name: Check formatting
         run: uv run ruff format --check .
+
+      - name: Fetch base branch for reviewer diff rules
+        run: git fetch origin ${{ github.base_ref || 'main' }}
+
+      - name: Run reviewer lint rules
+        run: uv run python lint-rules/check.py --base origin/${{ github.base_ref || 'main' }}
 
   backend-typecheck:
     name: Backend Typecheck

@@ -845,6 +845,14 @@ class Quiz(ObjectModel):
     status: str | None = None
     error_message: str | None = None
 
+    @classmethod
+    async def get(cls, id: str) -> "Quiz":
+        # 2026-10-16-quiz-me.md S6: ObjectModel.get resolves the subclass from
+        # the record prefix, so a foreign id must fail as input, not as a 500.
+        if not id.startswith("quiz:"):
+            raise InvalidInputError("quiz id must start with quiz:")
+        return await super().get(id)
+
     def _prepare_save_data(self) -> dict[str, Any]:
         data = super()._prepare_save_data()
         data["notebook"] = ensure_record_id(data["notebook"])

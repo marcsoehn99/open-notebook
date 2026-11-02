@@ -199,6 +199,7 @@ async def get_models(
         raise
     except Exception as e:
         logger.error(f"Error fetching models: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
 
 
@@ -251,11 +252,13 @@ async def create_model(model_data: ModelCreate):
     except HTTPException:
         raise
     except InvalidInputError as e:
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=400, detail=str(e))
     except OpenNotebookError:
         raise
     except Exception as e:
         logger.error(f"Error creating model: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error creating model: {str(e)}")
 
 
@@ -276,6 +279,7 @@ async def delete_model(model_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting model {model_id}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error deleting model: {str(e)}")
 
 
@@ -325,6 +329,7 @@ async def get_default_models():
         raise
     except Exception as e:
         logger.error(f"Error fetching default models: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error fetching default models: {str(e)}"
         )
@@ -379,6 +384,7 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
         raise
     except Exception as e:
         logger.error(f"Error updating default models: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error updating default models: {str(e)}"
         )
@@ -522,6 +528,7 @@ async def get_provider_availability():
         raise
     except Exception as e:
         logger.error(f"Error checking provider availability: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error checking provider availability: {str(e)}"
         )
@@ -637,6 +644,7 @@ async def sync_all_models():
         raise
     except Exception as e:
         logger.error(f"Error syncing all models: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error syncing all models: {str(e)}"
         )
@@ -664,6 +672,7 @@ async def get_model_count(provider: str):
         raise
     except Exception as e:
         logger.error(f"Error getting model count for {provider}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error getting model count: {str(e)}"
         )
@@ -702,6 +711,7 @@ async def get_models_by_provider(provider: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching models for {provider}: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(status_code=500, detail=f"Error fetching models: {str(e)}")
 
 
@@ -844,6 +854,7 @@ async def auto_assign_defaults():
         raise
     except Exception as e:
         logger.error(f"Error auto-assigning defaults: {str(e)}")
+        # on-lint: allow-raw-exception-text — pre-existing error text (2026-10-16-quiz-me.md S4 baseline).
         raise HTTPException(
             status_code=500, detail=f"Error auto-assigning defaults: {str(e)}"
         )

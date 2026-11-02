@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Optional Langfuse tracing.** Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to send language-model calls (prompt, token counts, latency, and the cost Langfuse computes from those tokens) to Langfuse. The default host is `https://cloud.langfuse.com` (EU cloud). `LANGFUSE_BASE_URL` is accepted when `LANGFUSE_HOST` is unset. With either key unset, tracing stays off and Open Notebook does not contact Langfuse. See [Environment Reference](docs/5-CONFIGURATION/environment-reference.md#logging-and-tracing).
 
 ### Changed
+- **Frontend packages install from the npmjs registry.** `frontend/package-lock.json` no longer downloads tarballs from `registry.npmmirror.com` (those URLs came in with #371). Versions and integrity hashes are unchanged.
+- **`packaging` is a direct dependency.** Version checks already import it; it was only pulled in transitively.
 - **SRH Workflow theme.** Pages use the warm off-white surface (swamp in dark mode), primary actions use SRH orange, the sidebar stays dark in both themes, and UI text uses Plus Jakarta Sans with JetBrains Mono for data.
 - **SRH controls.** Primary buttons are orange with the SRH radius, badges are pills that pair a status word with its color, and the dark sidebar marks the active item in orange.
 - **Glass accent.** A `.srh-glass-scene` utility and a `GlassPanel` component add glass only as an accent. Cards and forms stay opaque.
@@ -24,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Development:** `architecture.md`, `testing.md`, `api-reference.md` and `code-standards.md` are rewritten from the code. A new playbook covers adding an AI provider. Dev setup lives on one page. The AGENTS files agree with the docs. Contributor conventions (Conventional Commits, CHANGELOG sections, pre-PR checks that match CI) are documented
 
 ### Fixed
+- **A quiz id from another table is rejected.** `Quiz.get` requires a `quiz:` id, so a foreign record id is invalid input instead of an untyped server error.
+- **Quiz requests have size limits.** Topic, language, attempt id, question id, and the source and question-type lists on the quiz endpoints reject oversized values.
 - **Quiz answers and explanations load again.** SurrealDB 2.7 rejects a query that sets `$token`, so every answer and every explanation returned HTTP 500. The attempt lookup now binds `$attempt_token`.
 - **Quiz polling waits until generation finishes.** The player keeps asking while a quiz is new, queued, running, or unknown, and it stops only when the quiz is completed or failed. A job that is still in progress is shown as generating.
 - **Quiz attempts come from the server.** The player starts an attempt with the API. Answering with an id the server did not create does not reveal the solution, and a second answer for the same question is rejected. Each answer is stored on its own row, so two answers sent at the same time both stay saved.

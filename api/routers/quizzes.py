@@ -1,4 +1,4 @@
-from typing import Annotated, Union
+from typing import Annotated, Literal, Union
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -37,27 +37,33 @@ SubmissionBody = Annotated[
 ]
 
 
+# 2026-10-16-quiz-me.md S7: these strings are copied into the prompt.
+BoundedId = Annotated[str, Field(max_length=200)]
+BoundedLanguage = Annotated[str, Field(max_length=80)]
+BoundedTopic = Annotated[str, Field(max_length=2000)]
+
+
 class CreateQuizRequest(BaseModel):
-    source_ids: list[str]
-    num_questions: int
-    difficulty: str
-    topic_prompt: str | None = None
-    question_types: list[str]
-    language: str
+    source_ids: list[BoundedId] = Field(max_length=50)
+    num_questions: int = Field(ge=1, le=10)
+    difficulty: Literal["easy", "medium", "hard"]
+    topic_prompt: BoundedTopic | None = None
+    question_types: list[BoundedId] = Field(max_length=8)
+    language: BoundedLanguage
 
 
 class AttemptRequest(BaseModel):
-    attempt_id: str
-    question_id: str
+    attempt_id: BoundedId
+    question_id: BoundedId
     submission: SubmissionBody
 
 
 class ExplainRequest(BaseModel):
-    attempt_id: str
+    attempt_id: BoundedId
 
 
 class AttemptStarted(BaseModel):
-    attempt_id: str
+    attempt_id: BoundedId
 
 
 @router.post("/notebooks/{notebook_id}/quizzes", response_model=QuizSummary)
